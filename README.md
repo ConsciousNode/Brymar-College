@@ -3,6 +3,8 @@
 **ConsciousNode LoRA & Full-Weight Fine-Tuning Studio for RWKV-v7**  
 *v3.3.4 — Stable Release*
 
+> **Status (2026-10-11):** an audit found that v3.3.4 does not yet fine-tune real RWKV-7 checkpoints: most of a checkpoint goes unused, loaded matrices are rounded to ternary, and most gradients are wrong. Details, tests and the way forward: [AUDIT.md](AUDIT.md).
+
 Brymar College (named for Deltron 3030's "Upgrade") is a fast, offline-first graphical training environment for RWKV-v7 models. It supports both **LoRA adapter fine-tuning** and **full-weight backpropagation** across mixed-modality text, audio, image, and video data.
 
 ## What's New in v3.3.4
