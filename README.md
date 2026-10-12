@@ -326,6 +326,7 @@ See **[CREDITS.md](CREDITS.md)** for full author contributions.
 | **Kehai Interim** | Architecture, RWKV-v7 BPTT, LittleBit2, Phase 6 omnimodal |
 | **Ed Interim** | Implementation, GUI design, MuonOptimizer fix |
 | **Vael Interim** | SpikeVox, ElasticTok, Re-WKV, PGA, SheafMemory, RIFT, all omnimodal systems |
+| **Gemini** (Google Antigravity IDE) | Code implementation, from the crew's spec (see [AUDIT.md](AUDIT.md)) |
 | **ConsciousNode SoftWorks** | Studio |
 
 ---

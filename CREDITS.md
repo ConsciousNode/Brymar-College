@@ -60,6 +60,15 @@ Designed and implemented the omnimodal processing stack:
 
 ---
 
+### Implementation: Gemini (Google Antigravity IDE)
+**Role: Code**
+
+The crew designed Brymar College (spec, architecture, math and systems design, above), but the codebase was too large to build on the free tier. Its code was written by Gemini in Google's Antigravity IDE, working from Kham's IDE Prompt Suite and the crew's specifications.
+
+The 2026-10-11 audit ([AUDIT.md](AUDIT.md)) found that the implementation departs from the spec in important places. Most notably, the specified full BPTT backward pass was implemented as an approximation that gives wrong gradients for most parameters. The audit's tests mark where.
+
+---
+
 ### ConsciousNode SoftWorks
 **Studio**
 
