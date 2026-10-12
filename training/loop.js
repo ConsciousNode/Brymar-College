@@ -42,8 +42,8 @@ export class TrainingLoop {
     this.terminal = opts.terminal ?? null;
 
     // Parse numeric CLI strings
-    this.totalSteps   = parseInt(opts.steps)        ?? TRAINING.total_steps;
-    this.rank         = parseInt(opts.rank)         ?? MODEL.lora_rank;
+    this.totalSteps   = parseInt(opts.steps) || TRAINING.total_steps;   // (`?? ` never caught parseInt's NaN)
+    this.rank         = parseInt(opts.rank) || MODEL.lora_rank;
     this.trainingMode = opts.mode                   ?? TRAINING.mode;
     this.schedule     = opts.schedule               ?? 'cosine';
     this.warmupSteps  = opts.warmupSteps            ?? TRAINING.warmup_steps;
@@ -78,179 +78,90 @@ export class TrainingLoop {
    */
   async run() {
     const t = this.terminal;
-    const log = (msg, level = 'info') =>
-      t ? t.log(msg, level) : console.log(`[${level.toUpperCase()}] ${msg}`);
-
+    const log = (msg, level = 'info') => t ? t.log(msg, level) : console.log(`[${level.toUpperCase()}] ${msg}`);
     const isFullMode = this.trainingMode === 'full';
 
-    log(`OOMB Training Loop starting (${isFullMode ? 'FULL WEIGHT' : 'LoRA'} mode)`, 'ok');
-    log(`  Schedule: ${this.schedule} | Steps: ${this.totalSteps} | Base LR: ${this.baseLR}`, 'info');
-    if (isFullMode) {
-      log(`  Mode: Full-weight training — ALL parameters are trainable`, 'info');
+    const { RWKV7 }             = await import('../model/rwkv7.js');
+    const { loadRWKV7From }     = await import('../model/rwkv7_load.js');
+    const { RWKVWorldTokenizer } = await import('../tokenizer/rwkv_world.js');
+    const { AdamW }             = await import('./adamw.js');
+    const { OOMBTrainer }       = await import('./oomb.js');
+    const { saveCheckpoint, loadCheckpoint } = await import('../persistence/checkpoint.js');
+    const { CorpusLoader }      = await import('../tokenizer/corpus.js');
+
+    log(`Brymar College · real RWKV-7 engine · ${isFullMode ? 'FULL-WEIGHT' : 'LoRA'} mode`, 'ok');
+
+    // ── Base model ─────────────────────────────────────────────────────────
+    const source = this.opts.model ?? MODEL.base;
+    let model, baseModel = source;
+    if (source === 'scratch') {
+      model = new RWKV7({ vocabSize: 256, dim: 256, numLayers: 4, headSize: 64, dimFFN: 1024, dDecay: 32, dAAA: 32, dMV: 16, dGate: 64 });
+      baseModel = null;
+      log('From scratch: byte-level RWKV-7 (dim 256, 4 layers). For persona work, start from a pretrained model.', 'warn');
     } else {
-      log(`  LoRA rank: ${this.rank} | Chunk size: ${TRAINING.chunk_size} | Grad accum: ${TRAINING.grad_accum_steps}`, 'info');
+      try { ({ model } = await loadRWKV7From(source, log, { RWKV7 })); }
+      catch (e) { log(`Could not load base model "${source}": ${e.message}`, 'error'); log('Pass --model path/to/rwkv7.pth (or .safetensors), or --model scratch', 'info'); return; }
+    }
+    const world = model.V >= 65530;
+    const tokenizer = world ? new RWKVWorldTokenizer() : null;
+    if (world) log('Tokenizer: RWKV World (the base model\'s own vocabulary)', 'ok');
+
+    if (!isFullMode) {
+      model.injectLoRA(this.rank || MODEL.lora_rank, MODEL.lora_alpha);
+      const nLora = model.trainable().reduce((a, p) => a + p.weight.length, 0);
+      log(`LoRA rank ${this.rank || MODEL.lora_rank} on receptance/key/value/output: ${nLora.toLocaleString()} trainable parameters (base frozen)`, 'info');
     }
 
-    // ── Dynamic imports (avoid circular deps) ───────────────────────────────
-    const { RWKVModel }     = await import('../model/model.js');
-    const { loadModel }     = await import('../model/loader.js');
-    const { injectLoRA }    = await import('../model/lora.js');
-    const { MuonOptimizer } = await import('./muon.js');
-    const { OOMBTrainer }   = await import('./oomb.js');
-    const { saveCheckpoint, loadCheckpoint } = await import('../persistence/checkpoint.js');
-    const { CorpusLoader }  = await import('../tokenizer/corpus.js').catch(() => ({
-      CorpusLoader: null
-    }));
-
-    // ── Build model ────────────────────────────────────────────────────────
-    const modelCfg = {
-      modelName: this.opts.model ?? MODEL.base,
-      loraRank: this.rank,
-      loraAlpha: MODEL.lora_alpha,
-      trainingMode: this.trainingMode
-    };
-    
-    // loadModel automatically handles downloading, Safetensors parsing,
-    // auto-detecting dimensions (vocab, dim, layers), and applying weights
-    const model = await loadModel(modelCfg, t);
-    
-    // Use the auto-detected dimensions from the loaded model
-    const actualVocabSize = model.vocabSize;
-
-    // ── Resume from checkpoint if requested ───────────────────────────────
     let startStep = 0;
     if (this.opts.resume) {
-      log(`Resuming from ${this.opts.resume}`, 'info');
-      try {
-        startStep = await loadCheckpoint(this.opts.resume, model) ?? 0;
-        log(`Resumed at step ${startStep}`, 'ok');
-      } catch (e) {
-        log(`Could not load checkpoint: ${e.message} — starting fresh`, 'warn');
-      }
+      try { startStep = await loadCheckpoint(this.opts.resume, model) ?? 0; log(`Resumed at step ${startStep}`, 'ok'); }
+      catch (e) { log(`Could not resume: ${e.message}`, 'error'); return; }
     }
 
     // ── Corpus ─────────────────────────────────────────────────────────────
     let tokens;
-    if (CorpusLoader && this.opts.corpus) {
-      try {
-        const loader = new CorpusLoader(this.opts.corpus, t, this.opts);
-        tokens = await loader.load({ vocabSize: actualVocabSize });
-        log(`Corpus loaded: ${tokens.length} tokens from ${this.opts.corpus}`, 'ok');
-      } catch (e) {
-        log(`Corpus load failed (${e.message}) — using synthetic tokens`, 'warn');
-      }
-    }
+    try {
+      const loader = new CorpusLoader(this.opts.corpus ?? PATHS.corpus, t, this.opts);
+      tokens = await loader.load(world ? { encode: s => tokenizer.encode(s), textOnly: true } : { byteLevel: true, textOnly: true });
+    } catch (e) { log(`Corpus load failed: ${e.message}`, 'error'); return; }
+    if (tokens.length < TRAINING.chunk_size + 2) { log(`Corpus too small: ${tokens.length} tokens (need > ${TRAINING.chunk_size + 1})`, 'error'); return; }
+    const bad = tokens.find(x => x >= model.V); if (bad !== undefined) { log(`Token id ${bad} ≥ model vocab ${model.V}: tokenizer and model disagree`, 'error'); return; }
 
-    if (!tokens) {
-      // Synthetic byte-level corpus for smoke testing
-      tokens = this._makeSyntheticTokens(actualVocabSize, 1024);
-      log('Using synthetic 1024-token corpus for smoke test', 'warn');
-    }
+    // ── Optimizer + trainer ────────────────────────────────────────────────
+    this.baseLR = isFullMode ? (TRAINING.lr_full ?? TRAINING.lr / 10) : TRAINING.lr;
+    const optimizer = new AdamW(this.baseLR);
+    const trainer = new OOMBTrainer(model, { chunkSize: TRAINING.chunk_size });
+    const params = model.trainable();
+    log(`AdamW · base LR ${this.baseLR} · ${this.schedule} schedule · ${this.totalSteps} steps × ${TRAINING.grad_accum_steps} sequences of ${TRAINING.chunk_size} tokens`, 'info');
 
-    // ── Optimizer ─────────────────────────────────────────────────────────
-    const trainableParams = isFullMode
-      ? model.getAllParams()
-      : this._extractLoRAParams(model);
-
-    log(`Trainable parameters: ${trainableParams.length} matrices`, 'info');
-
-    const optimizer = new MuonOptimizer(
-      this.baseLR,
-      TRAINING.muon_momentum,
-      TRAINING.muon_wd,
-      TRAINING.grad_accum_steps
-    );
-
-    // ── Trainer ───────────────────────────────────────────────────────────
-    const trainer = new OOMBTrainer(model, optimizer, {
-      chunkSize: TRAINING.chunk_size,
-      trainingMode: this.trainingMode,
-      fristonAlpha: this.opts.fristonAlpha,
-    });
-    trainer.step = startStep;
-
-    // ── Progress bar ──────────────────────────────────────────────────────
-    if (t) t.startProgress(this.totalSteps, 'LoRA fine-tuning');
-
-    const tStart        = Date.now();
-    let accumLoss       = 0;
-    let microStep       = 0;
-    let globalStep      = startStep;
-    const seqLen        = TRAINING.chunk_size + 1;
-    const corpusLen     = tokens.length;
-
-    // ── Main loop ─────────────────────────────────────────────────────────
+    if (t) t.startProgress(this.totalSteps, isFullMode ? 'Full-weight fine-tuning' : 'LoRA fine-tuning');
+    const tStart = Date.now(), seqLen = TRAINING.chunk_size + 1;
+    let globalStep = startStep, accumLoss = 0, microStep = 0;
+    model.zeroGrad();
     while (globalStep < this.totalSteps && !this._stopRequested) {
-      // Sample a random window from corpus
-      const maxStart = Math.max(0, corpusLen - seqLen - 1);
-      const start    = Math.floor(Math.random() * maxStart);
-      const sequence = tokens.slice(start, start + seqLen);
-
-      try {
-        const loss = await trainer.trainSequence(sequence);
-        accumLoss += loss;
-        microStep++;
-        if (t && !t._bar) {
-          log(`  [micro] chunk ${microStep}/${TRAINING.grad_accum_steps} — loss ${loss.toFixed(4)}`, 'info');
-        }
-      } catch (e) {
-        log(`Sequence training error: ${e.message}`, 'error');
-        break;
+      const start = Math.floor(Math.random() * Math.max(1, tokens.length - seqLen));
+      try { accumLoss += await trainer.trainSequence(tokens.slice(start, start + seqLen)); microStep++; }
+      catch (e) { log(`Sequence training error: ${e.message}`, 'error'); break; }
+      if (microStep < TRAINING.grad_accum_steps) continue;
+      optimizer.lr = this._computeLR(globalStep);
+      const gnorm = optimizer.step(params, 1 / TRAINING.grad_accum_steps);
+      model.zeroGrad();
+      globalStep++;
+      const avgLoss = accumLoss / TRAINING.grad_accum_steps, elapsed = (Date.now() - tStart) / 1000;
+      const tokPerSec = ((globalStep - startStep) * TRAINING.grad_accum_steps * TRAINING.chunk_size) / Math.max(elapsed, 1e-6);
+      this.metrics.record(globalStep, avgLoss, tokPerSec);
+      if (t) t.updateProgress(globalStep, avgLoss, tokPerSec);
+      else console.log(`step=${globalStep}/${this.totalSteps} loss=${avgLoss.toFixed(4)} lr=${optimizer.lr.toExponential(2)} |g|=${gnorm.toFixed(3)} ${tokPerSec.toFixed(1)} tok/s`);
+      if (globalStep % TRAINING.checkpoint_every === 0) {
+        const p = await saveCheckpoint(model, globalStep, avgLoss, PATHS.checkpoints, this.trainingMode, { baseModel, tokenizer: world ? 'rwkv_world' : 'bytes' });
+        log(`Checkpoint saved → ${p}`, 'ok');
       }
-
-      // Optimizer step every grad_accum_steps micro-steps
-      if (microStep >= TRAINING.grad_accum_steps) {
-        const lr = this._computeLR(globalStep);
-        optimizer.lr = lr;
-
-        try {
-          await optimizer.step(trainableParams);
-          if (isFullMode) {
-            model.zeroGradAll();
-          } else {
-            this._zeroLoRAGrads(trainableParams);
-          }
-        } catch (e) {
-          log(`Optimizer step error: ${e.message}`, 'error');
-          break;
-        }
-
-        globalStep++;
-        const avgLoss = accumLoss / TRAINING.grad_accum_steps;
-        const elapsed = (Date.now() - tStart) / 1000;
-        const tokPerSec = (globalStep * seqLen) / Math.max(elapsed, 1e-6);
-
-        this.metrics.record(globalStep, avgLoss, tokPerSec);
-
-        if (t) {
-          t.updateProgress(globalStep, avgLoss, tokPerSec);
-        } else {
-          if (globalStep % 20 === 0) {
-            console.log(
-              `step=${globalStep}/${this.totalSteps} loss=${avgLoss.toFixed(4)} lr=${lr.toExponential(3)} ${tokPerSec.toFixed(0)} tok/s`
-            );
-          }
-        }
-
-        // Auto-checkpoint
-        if (globalStep % TRAINING.checkpoint_every === 0) {
-          const ckptPath = await saveCheckpoint(model, globalStep, avgLoss, PATHS.checkpoints, this.trainingMode);
-          log(`Checkpoint saved → ${ckptPath}`, 'ok');
-        }
-
-        accumLoss  = 0;
-        microStep  = 0;
-      }
+      accumLoss = 0; microStep = 0;
     }
-
     if (t) t.stopProgress();
-
-    // Final checkpoint
     const finalLoss = this.metrics.getAverage(20);
-    const finalCkpt = await saveCheckpoint(model, globalStep, finalLoss, PATHS.checkpoints, this.trainingMode);
+    const finalCkpt = await saveCheckpoint(model, globalStep, finalLoss, PATHS.checkpoints, this.trainingMode, { baseModel, tokenizer: world ? 'rwkv_world' : 'bytes' });
     log(`Training complete. Final checkpoint → ${finalCkpt}`, 'ok');
-    log(`Total steps: ${globalStep} | Avg loss (last 20): ${finalLoss.toFixed(4)}`, 'ok');
-
     return { globalStep, metrics: this.metrics };
   }
 
@@ -289,52 +200,6 @@ export class TrainingLoop {
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
-
-  /**
-   * Extract LoRA adapter weight/grad/mom param objects for the Muon optimizer.
-   * Each entry matches the interface expected by MuonOptimizer.step().
-   *
-   * @param {import('../model/model.js').RWKVModel} model
-   * @returns {Array<{ weight: Float32Array, grad: Float32Array, mom: Float32Array, rows: number, cols: number }>}
-   */
-  _extractLoRAParams(model) {
-    const params = [];
-    const adapters = model.getLoRALayers();
-    for (const adapter of adapters) {
-      // LoRA A matrix
-      if (adapter.A) {
-        if (!adapter.A_mom) adapter.A_mom = new Float32Array(adapter.A.length);
-        params.push({
-          weight: adapter.A,
-          grad:   adapter.gradA ?? (adapter.gradA = new Float32Array(adapter.A.length)),
-          mom:    adapter.A_mom,
-          rows:   adapter.rank,
-          cols:   adapter.inDim
-        });
-      }
-      // LoRA B matrix
-      if (adapter.B) {
-        if (!adapter.B_mom) adapter.B_mom = new Float32Array(adapter.B.length);
-        params.push({
-          weight: adapter.B,
-          grad:   adapter.gradB ?? (adapter.gradB = new Float32Array(adapter.B.length)),
-          mom:    adapter.B_mom,
-          rows:   adapter.outDim,
-          cols:   adapter.rank
-        });
-      }
-    }
-    return params;
-  }
-
-  /**
-   * Zero out gradients on all LoRA param objects.
-   *
-   * @param {Array<{ grad: Float32Array }>} params
-   */
-  _zeroLoRAGrads(params) {
-    for (const p of params) p.grad.fill(0);
-  }
 
   /**
    * Generate a synthetic byte-level token sequence for smoke-testing.

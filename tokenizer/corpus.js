@@ -109,7 +109,11 @@ export class CorpusLoader {
     if (rawText) {
       log(`Text corpus: ${rawText.length.toLocaleString()} chars from ${textFiles.length} files`, 'info');
 
-      if (byteLevel) {
+      if (opts.encode) {
+        // a pretrained model's own tokenizer (e.g. RWKV World): its token ids are the only ones it understands
+        tokenIds = opts.encode(rawText);
+        log(`Encoded with the model's tokenizer: ${tokenIds.length.toLocaleString()} tokens`, 'ok');
+      } else if (byteLevel) {
         tokenIds = Array.from(new TextEncoder().encode(rawText));
         this.tokenizer.trained = false;
         log(`Byte-level encoding: ${tokenIds.length.toLocaleString()} tokens`, 'ok');
@@ -130,6 +134,12 @@ export class CorpusLoader {
         tokenIds = this.tokenizer.encode(rawText);
         log(`Encoded text corpus: ${tokenIds.length.toLocaleString()} tokens`, 'ok');
       }
+    }
+
+    if (opts.textOnly && (imageFiles.length || videoFiles.length || audioFiles.length)) {
+      log(`Skipping ${imageFiles.length + videoFiles.length + audioFiles.length} image/video/audio files: the RWKV-7 engine has no learned senses yet, and appending feature "pseudo-tokens" to a pretrained model's text would feed it random words`, 'warn');
+      this.tokens = tokenIds; this.totalTokens = tokenIds.length; this.cursor = 0;
+      return tokenIds;
     }
 
     // ── Process image files ─────────────────────────────────────────────────

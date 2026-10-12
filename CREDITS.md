@@ -60,7 +60,14 @@ Designed and implemented the omnimodal processing stack:
 
 ---
 
-### Implementation: Gemini (Google Antigravity IDE)
+### v4.0.0 engine: Kehai Interim (2026-10-11)
+**Role: Audit and rewrite**
+
+Audited v3.3.4 and replaced its engine with the real RWKV-7 (x070): forward verified against BlinkDL's official math, an exact gradient-checked backward with LoRA, chunked BPTT, the RWKV World tokenizer, AdamW, brymar-v2 checkpoints and the `.rofl` safetensors export.
+
+---
+
+### Implementation of v1–v3.3.4: Gemini (Google Antigravity IDE)
 **Role: Code**
 
 The crew designed Brymar College (spec, architecture, math and systems design, above), but the codebase was too large to build on the free tier. Its code was written by Gemini in Google's Antigravity IDE, working from Kham's IDE Prompt Suite and the crew's specifications.

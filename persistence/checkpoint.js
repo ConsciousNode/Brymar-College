@@ -1,193 +1,52 @@
 // persistence/checkpoint.js
 // MIT License — ConsciousNode SoftWorks
 // Copyright (c) 2026 Khamerron Edward Ramsey Kizer (Kham), Kehai Interim, Ed Interim, Vael Interim
-// LoRA + Full-weight checkpoint save/load — Phase 3 + Phase 5
 //
-// LoRA mode: saves only LoRA adapter weights (A, B matrices) and training metadata.
-// Full mode: saves entire model state (embeddings, LN, all BitLinear, head).
-//
-// Momentum buffers are deliberately excluded to halve storage footprint
-// (mirrors the HTMLNLM.html persistence design note).
-//
-// Format: JSON with Float32Array values encoded as regular JS arrays.
-// Files are written to <dir>/checkpoint-<step>.json
+// Checkpoints for model/rwkv7.js (format brymar-v2, 2026-10-11).
+//   LoRA mode: one small JSON: config + where the base model came from + every adapter by name.
+//   Full mode: JSON metadata + a sidecar <name>.safetensors holding every parameter under its official
+//              RWKV-7 name (a 0.1B model is ~760 MB as F32; JSON arrays cannot hold that).
+// brymar-v1 checkpoints came from the pre-audit engine (see AUDIT.md) and are not loadable.
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, dirname, basename } from 'node:path';
+import { writeSafetensors, readSafetensors, modelTensors, loadIntoRWKV7 } from '../model/rwkv7_load.js';
 
-/**
- * Serialize a Float32Array to a plain JS Array for JSON storage.
- *
- * @param {Float32Array} arr
- * @returns {number[]}
- */
-function f32ToArray(arr) {
-  return Array.from(arr);
-}
-
-/**
- * Deserialize a plain JS Array back into a Float32Array.
- *
- * @param {number[]} arr
- * @returns {Float32Array}
- */
-function arrayToF32(arr) {
-  return new Float32Array(arr);
-}
-
-/**
- * Collect all LoRA adapter weight arrays from the model.
- *
- * Returns a list of { A, B, inDim, outDim, rank } objects —
- * one per adapter layer, in stable block × target-name order.
- *
- * @param {import('../model/model.js').RWKVModel} model
- * @returns {Array<Object>}
- */
-function extractAdapters(model) {
-  const adapters = model.getLoRALayers();
-  return adapters.map(adapter => ({
-    A:      f32ToArray(adapter.A),
-    B:      f32ToArray(adapter.B),
-    inDim:  adapter.inDim,
-    outDim: adapter.outDim,
-    rank:   adapter.rank,
-    scale:  adapter.scale ?? 1.0
-  }));
-}
-
-/**
- * Restore LoRA adapter weights into the model from a serialized list.
- *
- * @param {import('../model/model.js').RWKVModel} model
- * @param {Array<Object>} adapterData
- */
-function restoreAdapters(model, adapterData) {
-  const adapters = model.getLoRALayers();
-  if (adapters.length !== adapterData.length) {
-    throw new Error(
-      `Checkpoint has ${adapterData.length} adapters but model has ${adapters.length}`
-    );
-  }
-  for (let i = 0; i < adapters.length; i++) {
-    adapters[i].A     = arrayToF32(adapterData[i].A);
-    adapters[i].B     = arrayToF32(adapterData[i].B);
-    adapters[i].scale = adapterData[i].scale ?? 1.0;
-  }
-}
-
-/**
- * Collect all model weights for full-weight checkpointing.
- *
- * @param {import('../model/model.js').RWKVModel} model
- * @returns {Array<Object>}
- */
-function extractFullWeights(model) {
-  return model.getAllWeights().map(w => ({
-    name:   w.name,
-    data:   f32ToArray(w.data),
-    rows:   w.rows,
-    cols:   w.cols,
-  }));
-}
-
-/**
- * Restore all model weights from a full checkpoint.
- *
- * @param {import('../model/model.js').RWKVModel} model
- * @param {Array<Object>} weightData
- */
-function restoreFullWeights(model, weightData) {
-  const modelWeights = model.getAllWeights();
-  if (modelWeights.length !== weightData.length) {
-    throw new Error(
-      `Checkpoint has ${weightData.length} weight tensors but model has ${modelWeights.length}`
-    );
-  }
-  for (let i = 0; i < modelWeights.length; i++) {
-    const restored = arrayToF32(weightData[i].data);
-    // Copy into existing buffer (preserves references held by layers)
-    modelWeights[i].data.set(restored);
-  }
-}
-
-// ── Public API ────────────────────────────────────────────────────────────────
-
-/**
- * Save a checkpoint to disk.
- *
- * @param {import('../model/model.js').RWKVModel} model    - Model with injected LoRA (or full weights)
- * @param {number}                                step     - Current global training step
- * @param {number}                                loss     - Current average loss
- * @param {string}                                dir      - Output directory (will be created)
- * @param {string}                                [mode='lora'] - 'lora' | 'full'
- * @returns {Promise<string>} Absolute path to the saved checkpoint file
- */
-export async function saveCheckpoint(model, step, loss, dir, mode = 'lora') {
-  // Ensure checkpoint directory exists
+export async function saveCheckpoint(model, step, loss, dir, mode = 'lora', extra = {}) {
   await mkdir(dir, { recursive: true });
-
-  const filename = `checkpoint-${String(step).padStart(6, '0')}.json`;
-  const outPath  = join(dir, filename);
-
-  const payload = {
-    version:   'brymar-v1',
-    mode,
-    step,
-    loss,
-    timestamp: new Date().toISOString(),
-    modelCfg: {
-      vocabSize:  model.vocabSize,
-      dim:        model.dim,
-      numLayers:  model.numLayers,
-      dimFFN:     model.dimFFN
-    },
-  };
-
+  const stem = `checkpoint-${String(step).padStart(6, '0')}`, outPath = join(dir, `${stem}.json`);
+  const payload = { version: 'brymar-v2', arch: 'rwkv7', mode, step, loss, timestamp: new Date().toISOString(), modelCfg: model.cfg, baseModel: extra.baseModel ?? null, tokenizer: extra.tokenizer ?? null };
   if (mode === 'full') {
-    payload.weights = extractFullWeights(model);
-    // Also save LoRA adapters if present (hybrid mode)
-    const adapters = extractAdapters(model);
-    if (adapters.length > 0) {
-      payload.adapters = adapters;
-    }
-  } else {
-    payload.adapters = extractAdapters(model);
+    payload.weightsFile = `${stem}.safetensors`;
+    writeSafetensors(join(dir, payload.weightsFile), modelTensors(model), { format: 'brymar-v2', step });
   }
-
+  payload.adapters = Object.entries(model.lora).map(([name, a]) => ({ name, rank: a.r, scale: a.scale, inDim: a.inD, outDim: a.outD, A: Array.from(a.A), B: Array.from(a.B) }));
   await writeFile(outPath, JSON.stringify(payload), 'utf8');
   return outPath;
 }
 
-/**
- * Load a checkpoint from disk and restore model weights.
- *
- * @param {string}                                path  - Path to checkpoint .json file
- * @param {import('../model/model.js').RWKVModel} model - Model to restore into
- * @returns {Promise<number>} The step number stored in the checkpoint
- */
+/** Read a checkpoint's metadata (no weights). */
+export async function readCheckpointMeta(path) {
+  const payload = JSON.parse(await readFile(path, 'utf8'));
+  if (payload.version === 'brymar-v1') throw new Error('this checkpoint is from Brymar ≤ v3.3.4, whose model was not RWKV-7 and whose gradients were wrong (see AUDIT.md); it cannot be loaded into the new engine');
+  if (payload.version !== 'brymar-v2') throw new Error(`unknown checkpoint version: ${payload.version}`);
+  return payload;
+}
+
+/** Restore weights (full mode) and/or LoRA adapters into an already-built RWKV7. Returns the step. */
 export async function loadCheckpoint(path, model) {
-  const raw     = await readFile(path, 'utf8');
-  const payload = JSON.parse(raw);
-
-  if (payload.version !== 'brymar-v1') {
-    throw new Error(`Unknown checkpoint version: ${payload.version}`);
-  }
-
-  // Restore full weights if present
-  if (payload.weights) {
-    restoreFullWeights(model, payload.weights);
-  }
-
-  // Restore LoRA adapters if present
-  if (payload.adapters && payload.adapters.length > 0) {
-    try {
-      restoreAdapters(model, payload.adapters);
-    } catch (e) {
-      // Adapter count mismatch is non-fatal for full-weight checkpoints
-      if (payload.mode !== 'full') throw e;
+  const payload = await readCheckpointMeta(path);
+  if (payload.weightsFile) loadIntoRWKV7(model, readSafetensors(join(dirname(path), payload.weightsFile)));
+  if (payload.adapters?.length) {
+    const rank = payload.adapters[0].rank, scale = payload.adapters[0].scale;
+    if (!Object.keys(model.lora).length) model.injectLoRA(rank, scale * rank, [...new Set(payload.adapters.map(a => a.name.split('.')[3]))]);
+    for (const a of payload.adapters) {
+      const dst = model.lora[a.name];
+      if (!dst || dst.A.length !== a.A.length || dst.B.length !== a.B.length) throw new Error(`adapter ${a.name} does not fit this model`);
+      dst.A.set(a.A); dst.B.set(a.B); dst.scale = a.scale;
     }
   }
-
   return payload.step;
 }
+
+export const checkpointStem = p => basename(p, '.json');

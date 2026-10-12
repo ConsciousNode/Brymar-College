@@ -26,7 +26,7 @@ export const HARDWARE = {
 };
 
 export const MODEL = {
-  base: 'RWKV-v7-World-1.5B',
+  base: 'models/rwkv7-world.pth',   // an official RWKV-7 .pth/.safetensors (download from huggingface.co/BlinkDL/rwkv-7-world)
   lora_rank: 4,
   lora_alpha: 8,
   lora_targets: ['receptance', 'key', 'value', 'output'],
@@ -34,9 +34,12 @@ export const MODEL = {
 };
 
 export const TRAINING = {
-  chunk_size: 512,
+  // 2026-10-11 (new RWKV-7 engine): ~1 s per trained token at 0.1B on one CPU thread, so sequences are short
+  // by default. AdamW learning rates: LoRA 2e-4, full-weight 2e-5 (the old 5e-3 would wreck a pretrained model).
+  chunk_size: 128,
   grad_accum_steps: 4,
-  lr: 0.005,
+  lr: 2e-4,
+  lr_full: 2e-5,
   muon_momentum: 0.95,
   muon_wd: 0.01,
   warmup_steps: 100,

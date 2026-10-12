@@ -15,8 +15,8 @@ const t = new Terminal();
 
 program
   .name('brymar')
-  .description('ConsciousNode LoRA & full-weight fine-tuning studio for RWKV-v7')
-  .version('3.3.4');
+  .description('ConsciousNode LoRA & full-weight fine-tuning studio for real RWKV-7 (x070) models')
+  .version('4.0.0');
 
 program
   .command('train')
@@ -61,6 +61,7 @@ program
   .option('--prompt <text>', 'Evaluation prompt', 'Hello')
   .option('--max-tokens <n>', 'Maximum tokens to generate', '128')
   .option('--temperature <t>', 'Sampling temperature (0 = greedy)', '0')
+  .option('-m, --model <path>', 'Base model weights (defaults to the one recorded in the checkpoint)')
   .action(async (opts) => {
     t.banner();
     t.log('Evaluation mode', 'info');
@@ -72,123 +73,48 @@ program
 
     const maxTokens   = parseInt(opts.maxTokens) || 128;
     const temperature = parseFloat(opts.temperature) || 0;
+    const { RWKV7 } = await import('./model/rwkv7.js');
+    const { loadRWKV7From } = await import('./model/rwkv7_load.js');
+    const { RWKVWorldTokenizer } = await import('./tokenizer/rwkv_world.js');
+    const { readCheckpointMeta, loadCheckpoint } = await import('./persistence/checkpoint.js');
 
-    // Dynamic imports
-    const { RWKVModel }   = await import('./model/model.js');
-    const { loadModel }   = await import('./model/loader.js');
-    const { loadCheckpoint } = await import('./persistence/checkpoint.js');
-    const { readFile }    = await import('node:fs/promises');
-
-    // Read checkpoint to get modelCfg before loading
-    t.log(`Loading checkpoint: ${opts.checkpoint}`, 'info');
-    let payload;
+    let meta;
+    try { meta = await readCheckpointMeta(opts.checkpoint); } catch (e) { t.log(`Cannot use checkpoint: ${e.message}`, 'error'); return; }
+    let model;
     try {
-      const raw = await readFile(opts.checkpoint, 'utf8');
-      payload = JSON.parse(raw);
-    } catch (e) {
-      t.log(`Failed to read checkpoint: ${e.message}`, 'error');
-      return;
-    }
-
-    if (!payload.modelCfg) {
-      t.log('Checkpoint missing modelCfg — cannot reconstruct model', 'error');
-      return;
-    }
-
-    // Build model from saved config
-    const model = new RWKVModel(payload.modelCfg);
-    t.log(`Model: ${payload.modelCfg.numLayers}L × dim${payload.modelCfg.dim} (vocab ${payload.modelCfg.vocabSize})`, 'info');
-
-    // Restore weights
-    try {
+      if (meta.baseModel && !meta.weightsFile) ({ model } = await loadRWKV7From(opts.model || meta.baseModel, (m, l) => t.log(m, l), { RWKV7 }));
+      else model = new RWKV7(meta.modelCfg);
       await loadCheckpoint(opts.checkpoint, model);
-      t.log('Checkpoint restored', 'ok');
-    } catch (e) {
-      t.log(`Checkpoint restore failed: ${e.message}`, 'error');
-      return;
-    }
+    } catch (e) { t.log(`Could not build the model: ${e.message} (pass --model <base weights> if the base moved)`, 'error'); return; }
+    t.log(`Checkpoint restored: step ${meta.step}, ${meta.mode} mode`, 'ok');
 
-    // Encode prompt as bytes (byte-level until BPE tokenizer state is checkpointed)
-    const promptBytes = Array.from(new TextEncoder().encode(opts.prompt));
-    t.log(`Prompt: "${opts.prompt}" (${promptBytes.length} tokens)`, 'info');
-    t.log(`Generating ${maxTokens} tokens (temp=${temperature})...`, 'info');
+    const tok = model.V >= 65530 ? new RWKVWorldTokenizer() : null;
+    const encode = s => tok ? tok.encode(s) : Array.from(new TextEncoder().encode(s));
+    const promptIds = encode(opts.prompt);
+    t.log(`Prompt: "${opts.prompt}" (${promptIds.length} tokens) · generating ${maxTokens} (temp ${temperature})`, 'info');
     t.log('---', 'info');
 
-    // Autoregressive inference
-    let state = model.getEmptyState();
-    let generated = '';
-
-    // Feed prompt tokens
-    for (const tok of promptBytes) {
-      const result = model.forward(tok, state);
-      state = result.state;
-    }
-
-    // Generate
-    let lastLogits = null;
-    {
-      const result = model.forward(promptBytes[promptBytes.length - 1], state);
-      state = result.state;
-      lastLogits = result.logits;
-    }
-
+    // feed the prompt once; the last forward's logits predict the first new token
+    let state = model.getEmptyState(), logits = null;
+    for (const id of promptIds) { const r = model.forward(id, state); state = r.state; logits = r.logits; }
+    const out = [];
+    let printed = 0;
     for (let i = 0; i < maxTokens; i++) {
-      let nextToken;
-
-      if (temperature <= 0) {
-        // Greedy: argmax
-        let maxVal = -Infinity;
-        nextToken = 0;
-        for (let j = 0; j < lastLogits.length; j++) {
-          if (lastLogits[j] > maxVal) {
-            maxVal = lastLogits[j];
-            nextToken = j;
-          }
-        }
-      } else {
-        // Temperature sampling
-        const scaled = new Float32Array(lastLogits.length);
-        let maxLogit = -Infinity;
-        for (let j = 0; j < lastLogits.length; j++) {
-          scaled[j] = lastLogits[j] / temperature;
-          if (scaled[j] > maxLogit) maxLogit = scaled[j];
-        }
-        // Softmax
-        let sumExp = 0;
-        for (let j = 0; j < scaled.length; j++) {
-          scaled[j] = Math.exp(scaled[j] - maxLogit);
-          sumExp += scaled[j];
-        }
-        // Sample from distribution
-        let r = Math.random() * sumExp;
-        nextToken = 0;
-        for (let j = 0; j < scaled.length; j++) {
-          r -= scaled[j];
-          if (r <= 0) { nextToken = j; break; }
-        }
-      }
-
-      // Decode byte to character
-      if (nextToken < 256) {
-        try {
-          const char = new TextDecoder().decode(new Uint8Array([nextToken]));
-          generated += char;
-          process.stdout.write(char);
-        } catch {
-          generated += '?';
-          process.stdout.write('?');
-        }
-      }
-
-      // Next step
-      const result = model.forward(nextToken, state);
-      state = result.state;
-      lastLogits = result.logits;
+      let next = 0;
+      if (temperature <= 0) { for (let j = 1; j < logits.length; j++) if (logits[j] > logits[next]) next = j; }
+      else { let mx = -Infinity; for (const v of logits) mx = Math.max(mx, v / temperature); let s = 0; const p = new Float64Array(logits.length);
+        for (let j = 0; j < logits.length; j++) { p[j] = Math.exp(logits[j] / temperature - mx); s += p[j]; }
+        let r = Math.random() * s; for (next = 0; next < p.length - 1; next++) { r -= p[next]; if (r <= 0) break; } }
+      if (tok && next === 0) break;              // end-of-text
+      out.push(next);
+      const text = tok ? tok.decode(out) : new TextDecoder().decode(Uint8Array.from(out));
+      const safe = text.replace(/�+$/, '');  // hold back a half-finished UTF-8 character
+      process.stdout.write(safe.slice(printed)); printed = safe.length;
+      const r = model.forward(next, state); state = r.state; logits = r.logits;
     }
-
-    console.log(); // newline after generation
+    console.log();
     t.log('---', 'info');
-    t.log(`Generated ${generated.length} characters`, 'ok');
+    t.log(`Generated ${out.length} tokens`, 'ok');
   });
 
 program

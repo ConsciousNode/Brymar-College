@@ -1,212 +1,65 @@
 // training/oomb.js
 // MIT License — ConsciousNode SoftWorks
 // Copyright (c) 2026 Khamerron Edward Ramsey Kizer (Kham), Kehai Interim, Ed Interim, Vael Interim
-// OOMB chunk-recurrent BPTT trainer for RWKV-v7 LoRA and full-weight fine-tuning
 //
-// OOMB = Out-Of-Memory Budget
-// Splits the input sequence into fixed-size chunks, saves a recurrent state
-// checkpoint at every chunk boundary, then replays each chunk forward/backward
-// to compute full BPTT gradients without ever materialising the entire sequence
-// activation history at once.
-//
-// Reference: HTMLNLM.html — Trainer class (Kham / Kehai Interim / Ed Interim)
+// OOMB chunk-recurrent BPTT for model/rwkv7.js (rewritten 2026-10-11, see AUDIT.md).
+// Pass 1 runs the sequence forward and keeps only the recurrent state at each chunk boundary.
+// Pass 2 replays one chunk at a time, last chunk first, and backpropagates through it, carrying the
+// state gradient (token shift + per-head matrix memory) across chunk boundaries. The gradient is the
+// exact gradient of the whole sequence's loss; only one chunk's activations live in memory at once.
+// (tests/oomb.mjs checks chunked == unchunked.)
 
-import { TRAINING } from '../src/config.js';
+/** Softmax cross-entropy: returns { loss, grad } with grad = (p − onehot) · scale. */
+export function crossEntropy(logits, target, scale = 1) {
+  const V = logits.length, g = new Float32Array(V); let mx = -Infinity;
+  for (let i = 0; i < V; i++) if (logits[i] > mx) mx = logits[i];
+  let s = 0; for (let i = 0; i < V; i++) { g[i] = Math.exp(logits[i] - mx); s += g[i]; }
+  const loss = -(logits[target] - mx - Math.log(s));
+  for (let i = 0; i < V; i++) g[i] = (g[i] / s - (i === target ? 1 : 0)) * scale;
+  return { loss, grad: g };
+}
 
-/**
- * OOMBTrainer: Chunk-recurrent BPTT for RWKV-v7 fine-tuning.
- *
- * Supports both LoRA-only and full-weight training modes via a configurable
- * backward function. Memory budget is controlled by TRAINING.chunk_size and
- * TRAINING.grad_accum_steps from src/config.js.
- */
 export class OOMBTrainer {
   /**
-   * @param {import('../model/model.js').RWKVModel} model
-   * @param {import('./muon.js').MuonOptimizer} optimizer
-   * @param {Object} [opts]
-   * @param {number} [opts.chunkSize]     - Tokens per BPTT chunk (default TRAINING.chunk_size)
-   * @param {string} [opts.trainingMode]  - 'lora' | 'full' (default 'lora')
+   * @param {import('../model/rwkv7.js').RWKV7} model
+   * @param {object} [opts] { chunkSize = 128 }
    */
-  constructor(model, optimizer, opts = {}) {
-    this.model   = model;
-    this.opt     = optimizer;
-    this.step    = 0;
-    this.chunkSize = opts.chunkSize ?? TRAINING.chunk_size;
-    this.trainingMode = opts.trainingMode ?? 'lora';
-    this.fristonAlpha = opts.fristonAlpha ?? 0.0;
-  }
-
-  // ── Public API ─────────────────────────────────────────────────────────────
+  constructor(model, opts = {}) { this.model = model; this.chunkSize = opts.chunkSize ?? 128; this.step = 0; }
 
   /**
-   * Train on a single token sequence using chunk-recurrent BPTT.
-   *
-   * Gradients are accumulated into LoRA adapter weights (lora mode) or
-   * all model parameters (full mode).
-   * The caller is responsible for calling optimizer.step() every
-   * TRAINING.grad_accum_steps invocations and then zeroGrad().
-   *
-   * @param {number[]} tokens - Token ID sequence (length ≥ 2)
-   * @returns {Promise<number>} Average cross-entropy loss for this sequence
+   * Accumulate the gradient of the mean next-token loss over `tokens` (length ≥ 2).
+   * @param {number[]} tokens
+   * @param {object} [opts] { lossMask: boolean[] (loss only where true, e.g. only on the persona's replies), state }
+   * @returns {Promise<number>} mean loss over the counted positions
    */
-  async trainSequence(tokens) {
-    const len = tokens.length;
-    if (len < 2) return 0;
-
-    const chunkSize = this.chunkSize;
-
-    // ── Phase 1: Forward scan — collect one state checkpoint per chunk ──────
-    let state = this.model.getEmptyState();
-    const checkpoints = [];    // [{ start, state }]
-
-    for (let start = 0; start < len - 1; start += chunkSize) {
-      // Snapshot state before chunk begins
-      const stateCopy = this._cloneState(state);
-      checkpoints.push({ start, state: stateCopy });
-
-      const end = Math.min(start + chunkSize, len - 1);
-      for (let t = start; t < end; t++) {
-        const res = this.model.forward(tokens[t], state);
-        state     = res.state;
-      }
-
-      // Yield to Node.js event loop between chunks
-      await new Promise(resolve => setImmediate(resolve));
+  async trainSequence(tokens, opts = {}) {
+    const m = this.model, T = tokens.length - 1, cs = this.chunkSize;
+    if (T < 1) return 0;
+    const mask = opts.lossMask, count = mask ? mask.slice(1).filter(Boolean).length || 1 : T;
+    // pass 1: forward, keep chunk-boundary states
+    const starts = [];
+    let st = opts.state ? m.cloneState(opts.state) : m.getEmptyState();
+    for (let s = 0; s < T; s += cs) {
+      starts.push(m.cloneState(st));
+      for (let t = s; t < Math.min(s + cs, T); t++) st = m.forward(tokens[t], st).state;
+      await new Promise(r => setImmediate(r));
     }
-
-    // ── Phase 2: Backward scan — replay each chunk and backprop ─────────────
-    state = null;   // release forward-scan state
-    let totalLoss = 0;
-
-    // stateGrads propagated backward across chunk boundaries
-    let stateGrads = this.model.blocks.map(() => ({
-      num: new Float32Array(this.model.dim),
-      den: new Float32Array(this.model.dim)
-    }));
-
-    // Select backward function based on training mode
-    const backwardFn = this.trainingMode === 'full'
-      ? this.model.backwardFull.bind(this.model)
-      : this.model.backwardLoRAOnly.bind(this.model);
-
-    for (let ci = checkpoints.length - 1; ci >= 0; ci--) {
-      const { start, state: replayState } = checkpoints[ci];
-      const end = Math.min(start + chunkSize, len - 1);
-
-      // Re-run forward pass for this chunk, collecting activations
-      const acts = [];
-      let currentState = replayState;
-
-      for (let t = start; t < end; t++) {
-        const res = this.model.forward(tokens[t], currentState);
-        acts.push({
-          logits:    res.logits,
-          caches:    res.caches,
-          loraCaches: res.loraCaches,
-          tokenId:   tokens[t]
-        });
-        currentState = res.state;
-      }
-
-      // Backward through timesteps in reverse (BPTT within chunk)
+    // pass 2: replay chunks backwards, BPTT with the state gradient carried across chunks
+    let gState = null, total = 0;
+    for (let ci = starts.length - 1; ci >= 0; ci--) {
+      const s = ci * cs, e = Math.min(s + cs, T), acts = [];
+      let cur = starts[ci];
+      for (let t = s; t < e; t++) { const r = m.forward(tokens[t], cur); acts.push(r); cur = r.state; }
       for (let j = acts.length - 1; j >= 0; j--) {
-        const targetId = tokens[start + j + 1];
-        const { loss, grad } = this._lossAndGrad(acts[j].logits, targetId);
-        totalLoss += loss;
-
-        // Accumulate gradients (LoRA-only or full)
-        const result = backwardFn(
-          grad,
-          acts[j].caches,
-          acts[j].loraCaches,
-          stateGrads
-        );
-        stateGrads = result.gradStatesOut;
+        const pos = s + j + 1, counted = !mask || mask[pos];
+        let g;
+        if (counted) { const r = crossEntropy(acts[j].logits, tokens[pos], 1 / count); total += r.loss; g = r.grad; }
+        else g = new Float32Array(m.V);
+        gState = m.backward(g, acts[j].cache, gState);
       }
-
-      await new Promise(resolve => setImmediate(resolve));
+      await new Promise(r => setImmediate(r));
     }
-
     this.step++;
-    return totalLoss / Math.max(1, len - 1);
-  }
-
-  // ── Private helpers ────────────────────────────────────────────────────────
-
-  /**
-   * Compute softmax cross-entropy loss and gradient w.r.t. logits.
-   *
-   * @param {Float32Array} logits   - Raw logits [vocabSize]
-   * @param {number}       targetId - Target token index
-   * @returns {{ loss: number, grad: Float32Array }}
-   */
-  _lossAndGrad(logits, targetId) {
-    const V = logits.length;
-
-    // Numerically stable softmax
-    let max = -Infinity;
-    for (let i = 0; i < V; i++) if (logits[i] > max) max = logits[i];
-
-    let sum = 0;
-    const probs = new Float32Array(V);
-    for (let i = 0; i < V; i++) {
-      probs[i] = Math.exp(logits[i] - max);
-      sum += probs[i];
-    }
-    
-    let entropy = 0;
-    for (let i = 0; i < V; i++) {
-      probs[i] /= sum;
-      if (probs[i] > 1e-8) {
-        entropy -= probs[i] * Math.log(probs[i]);
-      }
-    }
-
-    // Standard Cross-Entropy
-    let loss = -Math.log(probs[targetId] + 1e-8);
-
-    // Fristonian Expected Surprise (Entropy Penalty)
-    // We minimize Free Energy by minimizing uncertainty (entropy)
-    if (this.fristonAlpha > 0) {
-      loss += this.fristonAlpha * entropy;
-    }
-
-    // Gradient of softmax cross-entropy: p - one_hot(target)
-    for (let i = 0; i < V; i++) {
-      let grad_i = probs[i];
-      if (i === targetId) grad_i -= 1.0;
-      
-      // Inject Friston gradient if enabled
-      if (this.fristonAlpha > 0) {
-        // dH/dz_i = -p_i * (log(p_i) - sum(p_j log(p_j)))
-        // sum(p_j log(p_j)) = -H
-        // dH/dz_i = -p_i * (log(p_i) + H)
-        let log_p = probs[i] > 1e-8 ? Math.log(probs[i]) : -18.42;
-        let fristonGrad = -probs[i] * (log_p + entropy);
-        grad_i += this.fristonAlpha * fristonGrad;
-      }
-      
-      probs[i] = grad_i;
-    }
-
-    return { loss, grad: probs };
-  }
-
-  /**
-   * Deep-clone the per-block recurrent state.
-   *
-   * Each block state = { prevX, prevX2, num, den } (all Float32Array | null).
-   *
-   * @param {Array<Object>} state
-   * @returns {Array<Object>}
-   */
-  _cloneState(state) {
-    return state.map(s => ({
-      prevX:  s.prevX  ? new Float32Array(s.prevX)  : null,
-      prevX2: s.prevX2 ? new Float32Array(s.prevX2) : null,
-      num:    s.num    ? new Float32Array(s.num)    : null,
-      den:    s.den    ? new Float32Array(s.den)    : null
-    }));
+    return total / count;
   }
 }

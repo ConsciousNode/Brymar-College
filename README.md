@@ -1,131 +1,79 @@
 # Brymar College
 
-**ConsciousNode LoRA & Full-Weight Fine-Tuning Studio for RWKV-v7**  
-*v3.3.4 — Stable Release*
+**ConsciousNode LoRA & Full-Weight Fine-Tuning Studio for RWKV-7**
+*v4.0.0 — the real RWKV-7 engine (2026-10-11)*
 
-> **Status (2026-10-11):** an audit found that v3.3.4 does not yet fine-tune real RWKV-7 checkpoints: most of a checkpoint goes unused, loaded matrices are rounded to ternary, and most gradients are wrong. Details, tests and the way forward: [AUDIT.md](AUDIT.md).
+Brymar College (named for Deltron 3030's "Upgrade") is an offline-first training environment for **pretrained RWKV-7 (x070) models**: LoRA adapters or full-weight fine-tuning, on CPU, in plain JavaScript.
 
-Brymar College (named for Deltron 3030's "Upgrade") is a fast, offline-first graphical training environment for RWKV-v7 models. It supports both **LoRA adapter fine-tuning** and **full-weight backpropagation** across mixed-modality text, audio, image, and video data.
+## What's new in v4.0.0
 
-## What's New in v3.3.4
-- **OpenCL Compute Toggle:** Added a UI configuration dropdown to explicitly disable GPU acceleration in favor of CPU AVX path, addressing compilation issues with `node-opencl` on unsupported drivers.
-- **PyTorch Storage Safeguard:** The JS tensor parser now seamlessly intercepts chunked PyTorch `.pth` storage files and transparently converts them to `.safetensors` via a zero-dependency Python background worker, preventing catastrophic architecture misalignment (e.g. 92M vocab size).
-- **BPE Progress Latch:** Fixed a UI spam issue where floating point rounding caused `BPE progress: 0%` to flood the terminal for several seconds.
-- **Telemetry Bridge Restored:** Fixed a persistent Dev Mode race condition during Neutralino boot by adding an async poll mechanism to wait for CLI security credentials.
+An audit of v3.3.4 ([AUDIT.md](AUDIT.md)) found that it could not fine-tune real RWKV-7 checkpoints:
+- its model wasn't RWKV-7, so 43 of 69 checkpoint tensors went unused and 14 parameter sets stayed random;
+- the weights that did load were rounded to ternary;
+- 38 of 42 parameter groups got wrong gradients;
+- the corpus was tokenized with a vocabulary the base model doesn't know.
+
+v4.0.0 replaces the engine. Every claim below is checked by a test you can run:
+
+| What | Test |
+|---|---|
+| **The real RWKV-7** (`model/rwkv7.js`): per-head matrix memory, low-rank decay / in-context rate / value residual / gate, `k_k`, `k_a`, `r_k`, group norm. Matches a numpy transcription of BlinkDL's official code to **7·10⁻¹⁵** | `python3 tests/ref/rwkv7_ref.py /tmp/ref && node tests/forward-ref.mjs /tmp/ref` |
+| **Official checkpoints load 1:1**: every tensor by its official name, and anything unused or missing is reported, never silently skipped | same, plus the load report every run prints |
+| **Exact gradients** for all 69 parameter tensors and all LoRA adapters, with BPTT through the matrix memory, token shift and value residual. A deliberately broken gradient is caught | `node tests/gradcheck-rwkv7.mjs` |
+| **Chunked training (OOMB) = unchunked**, bit for bit | `node tests/oomb.mjs` |
+| **The RWKV World tokenizer** (65,536 tokens, the one pretrained World models know), matching BlinkDL's Python tokenizer token for token | `python3 tests/tokenizer-ref.py <path to pip package rwkv>` |
+| **It learns:** pretrain a tiny model (6.03 → 0.05 nats/byte), then LoRA-only fine-tuning teaches it a new voice (7.07 → 0.20) | `node tests/learn.mjs` |
+
+**Weights stay in full precision.** Ternary (BitNet) works for models *trained* ternary, not for float-pretrained ones. The optimizer is AdamW (LoRA LR 2e-4, full-weight 2e-5).
+
+**Honest speed:** about **1 second per trained token** for the 0.1B model on one CPU thread. A training step (4 × 128 tokens) takes ≈ 9 minutes, so a few hundred steps means days. Multi-core training is the next optimization.
+
+**Not (yet) in the RWKV-7 engine:**
+- **Senses.** Images, audio and video in the corpus are skipped with a warning; feature "pseudo-tokens" would read as random words to a pretrained model. Evangelion's learned senses (prefix + context, exact gradients) are the design to port.
+- **Active inference.** `--friston-alpha` is ignored: an entropy penalty rewards confidence, which is not active inference.
 
 ## What is Brymar College?
 
-Brymar College is a local, offline-first fine-tuning studio for RWKV-v7 language models.
-It runs entirely on your machine — no cloud API, no telemetry, no Python, no GPU required.
-
-You provide a corpus (text, images, audio). Brymar College teaches the model to sound like it.
+You provide a corpus. Brymar College fine-tunes a pretrained RWKV-7 to sound like it, entirely on your machine: no cloud API, no telemetry, no GPU.
 
 Two training modes:
-- **LoRA** — Fine-tune only small adapter matrices. Fast, memory-efficient.
-- **Full Weight** — Train all model parameters end-to-end. Maximum expressiveness.
-
-The architecture is omnimodal from the ground up: text, images, and audio feed the same
-recurrent sequence. All trained models have native omnimodality and Friston active inference
-baked in — differentiating them from standard text-to-text models.
+- **LoRA** (default): small adapters on receptance/key/value/output; the base stays frozen. A checkpoint is the adapters plus a pointer to the base model, ≈100 KB, so several personas can share one base.
+- **Full weight:** every parameter trains. Checkpoints are a `.safetensors` file with the official names.
 
 ---
 
-## Features
+## Quick start (v4)
 
-| Feature | Status |
-|---|---|
-| BitNet b1.58 ternary base weights | ✅ |
-| RWKV-v7 recurrent block (full forward + BPTT backward) | ✅ |
-| **Full-weight training (all parameters)** | ✅ |
-| LoRA adapter injection (rank-configurable) | ✅ |
-| Muon optimizer (Newton-Schulz-5 orthogonalization) | ✅ |
-| OOMB chunk-recurrent training (memory-efficient BPTT) | ✅ |
-| NanoTokenizer (BPE, Worker Thread, interoperable) | ✅ |
-| CorpusLoader (text + image + audio, 30+ formats) | ✅ |
-| ElasticTok v2 (adaptive visual patch tokenization) | ✅ |
-| SpikeVox v2 (LIF audio encoder, rate coding) | ✅ |
-| MultimodalPipeline (unified token stream) | ✅ |
-| **Export: .rofl (FP32 full precision)** | ✅ |
-| **Export: .lmao (Q4 symmetric quantization)** | ✅ |
-| **Export: .fuctrump (Q2 ternary quantization)** | ✅ |
-| JSON checkpoint save/load (LoRA + full-weight) | ✅ |
-| Neutralino desktop GUI (CRT aesthetic) | ✅ |
-| Installable distribution (Linux, Windows, macOS) | ✅ |
+1. Download an RWKV-7 World model `.pth` from [huggingface.co/BlinkDL/rwkv-7-world](https://huggingface.co/BlinkDL/rwkv-7-world). The 0.1B model is the practical size on CPU.
+2. `npm install`
+3. Put `.txt` / `.md` / chat-export files in `./corpus/`.
+4. Train, then talk to it, then export:
+
+```bash
+node index.js train --model models/rwkv7-world-0.1b.pth --steps 300          # LoRA (default)
+node index.js eval  --checkpoint checkpoints/checkpoint-000300.json --prompt "Hello"
+node index.js export --checkpoint checkpoints/checkpoint-000300.json --format rofl
+```
+
+`.pth` files are converted with `scripts/convert_pth.py` (Python 3, no PyTorch needed); `.safetensors` load directly. `.rofl` exports are the merged model as standard safetensors with official RWKV-7 names, loadable again with `--model`.
 
 ---
 
 ## Supported Base Models
 
-Brymar College natively loads RWKV-v7 weights locally or from the Hugging Face Hub in three formats (zero Python required):
+Official **RWKV-7 (x070)** checkpoints, loaded by their official tensor names:
 
-1. **`.safetensors`** (Recommended) — Fast, memory-safe, standard Hugging Face format.
-2. **`.gguf`** — Fully supported. Automatically detects F16/F32 streams and maps tensor dimensions.
-3. **`.pth`** / **`.bin`** — Best-effort support for PyTorch 1.6+ ZIP streams. Extracts raw tensor byte streams directly from the `data.pkl` without invoking the Python virtual machine.
+1. **`.safetensors`**: read directly (F32, F16, BF16).
+2. **`.pth` / `.bin`**: converted to safetensors by `scripts/convert_pth.py` (Python 3 standard library; PyTorch not needed), then read.
+3. **Hugging Face repo id**: tries `<repo>/model.safetensors`. BlinkDL publishes `.pth` files, so for official models download the `.pth` and pass its path.
 
-## Quick Start
+GGUF is not supported by the v4 engine. Older RWKV generations (v4–v6) have different architectures and are rejected with a clear error.
 
-### Prerequisites
-
-- **Node.js 18+** — [nodejs.org](https://nodejs.org)
-- **npm** — included with Node.js
-
-### Install
-
-```bash
-# Clone or extract the project
-cd brymar-college
-
-# Install dependencies
-npm install
-```
-
-### Train (CLI)
-
-```bash
-# LoRA mode (default) — place corpus files in ./corpus/
-node index.js train
-
-# With options:
-node index.js train --corpus ./corpus --steps 2000 --rank 4 --model RWKV-v7-World-1.5B
-
-# Full-weight training:
-node index.js train --mode full --steps 1000
-
-# With LR schedule:
-node index.js train --schedule cosine --steps 2000
-```
-
-### Train (GUI)
+### GUI
 
 ```bash
 npm run gui
-# Opens the Brymar College desktop window
 ```
-
-### Eval (CLI)
-
-```bash
-# Run inference with a prompt
-node index.js eval --checkpoint ./checkpoints/checkpoint-002000.json --prompt "The fundamental theorem of calculus states that"
-
-# Adjust sampling parameters
-node index.js eval --checkpoint ./checkpoints/checkpoint-002000.json --prompt "I love" --temperature 0.8 --max-tokens 256
-```
-
-### Export a trained model
-
-```bash
-# Full precision (.rofl)
-node index.js export --checkpoint ./checkpoints/checkpoint-002000.json --format rofl
-
-# Q4 quantized (.lmao)
-node index.js export --checkpoint ./checkpoints/checkpoint-002000.json --format lmao
-
-# Q2 ternary (.fuctrump)
-node index.js export --checkpoint ./checkpoints/checkpoint-002000.json --format fuctrump
-```
-
----
 
 ## Export Formats
 
@@ -143,17 +91,11 @@ These custom file extensions differentiate them from standard text-to-text model
 
 ## Corpus File Types
 
-The corpus loader accepts multimodal input files:
+**Text** (`.txt .md .rst .csv .tsv .json .jsonl .xml .html .htm .yaml .yml .toml .log .rtf .tex .org .adoc`) is tokenized with the **base model's own tokenizer** (RWKV World for World models; bytes for `--model scratch`).
 
-### Text (tokenized via BPE)
-`.txt` `.md` `.rst` `.csv` `.tsv` `.json` `.jsonl` `.xml` `.html` `.htm`
-`.yaml` `.yml` `.toml` `.log` `.rtf` `.tex` `.org` `.adoc`
+Images, audio and video are recognised but **skipped with a warning** in v4, until learned senses are ported to the RWKV-7 engine.
 
-### Image (decoded via sharp → ElasticTok)
-`.png` `.jpg` `.jpeg` `.webp` `.tiff` `.tif` `.gif` `.avif` `.svg` `.bmp`
-
-### Audio (native WAV parser → SpikeVox)
-`.wav` (PCM int8/16/24/32, IEEE float32/64, mono downmix)
+**Corpus naming:** `YYYY-MM-DD_*.md`. Files are read in sorted order, so chronological names keep a soul corpus in order.
 
 ---
 
@@ -175,21 +117,19 @@ brymar-college/
 │       ├── terminal.js         ← CRT-style terminal output
 │       └── metrics.js          ← Windowed loss / throughput tracking
 │
-├── model/                      ← RWKV-v7 model stack
-│   ├── bitlinear.js            ← BitNet b1.58 ternary linear layer
-│   ├── layernorm.js            ← RMS LayerNorm
-│   ├── rwkv7block.js           ← Full RWKV-v7 block (forward + backward)
-│   ├── tmac.js                 ← Ternary Matrix-vector multiply (TMAC)
-│   ├── lora.js                 ← LoRA adapter injection + backward
-│   ├── model.js                ← Full model assembly + backwardFull + backwardLoRAOnly
-│   └── loader.js               ← HuggingFace weight loading
+├── model/                      ← RWKV-7 engine (v4)
+│   ├── rwkv7.js                ← the real RWKV-7 (x070): forward + exact backward + LoRA
+│   └── rwkv7_load.js           ← safetensors / .pth / HF loading, 1:1 by official names
 │
 ├── training/
-│   ├── muon.js                 ← Muon optimizer (Newton-Schulz-5)
-│   ├── oomb.js                 ← OOMB chunk-recurrent BPTT trainer
+│   ├── adamw.js                ← AdamW (default optimizer)
+│   ├── muon.js                 ← Muon (kept; not used by the v4 loop)
+│   ├── oomb.js                 ← OOMB chunk-recurrent BPTT (exact; = unchunked)
 │   └── loop.js                 ← TrainingLoop orchestrator (LoRA + full-weight)
 │
 ├── tokenizer/
+│   ├── rwkv_world.js           ← RWKV World tokenizer (official vocabulary)
+│   ├── rwkv_world_vocab.json   ← rwkv_vocab_v20230424 (BlinkDL, Apache-2.0)
 │   ├── bpe.js                  ← NanoTokenizer (BPE encode/decode/serialize)
 │   ├── bpe_worker.js           ← BPE Worker Thread script
 │   ├── corpus.js               ← CorpusLoader (text + image + audio)
@@ -249,7 +189,7 @@ node index.js export  [options]
 
 | Flag | Default | Description |
 |---|---|---|
-| `--model <name>` | `RWKV-v7-World-1.5B` | Base RWKV-v7 model to fine-tune |
+| `--model <path>` | `models/rwkv7-world.pth` | Base RWKV-7 weights (.pth / .safetensors / HF repo id), or `scratch` |
 | `--mode <mode>` | `lora` | Training mode: `lora` or `full` |
 | `--rank <n>` | `4` | LoRA adapter rank (LoRA mode only) |
 | `--steps <n>` | `2000` | Total training steps |
@@ -264,13 +204,11 @@ node index.js export  [options]
 
 ## Training Tips
 
-- **Corpus naming**: Use `YYYY-MM-DD_*.md` filenames. The CorpusLoader reads files in sorted order, so chronological naming preserves identity signal ordering for soul-corpus distillation.
-- **Mixed modalities**: Put text, images, and audio in the same corpus directory. The loader classifies and processes each file by extension.
-- **LoRA rank**: Start at `r=4`. Increase to `8` or `16` if loss plateaus early. Higher rank = more parameters = slower convergence.
-- **Full-weight mode**: Use for deep fine-tuning when LoRA isn't expressive enough. Requires more memory and produces larger checkpoints.
-- **Steps**: 2000 is a baseline. Watch the loss curve — stop early if it flattens below 1.5.
-- **Checkpoints**: Auto-saved every 200 steps to `./checkpoints/`. LoRA checkpoints contain only adapter matrices. Full-weight checkpoints contain the entire model state.
-- **Memory**: The 1.5B model fits in ~8GB RAM. The 2.9B model needs ~16GB (use zRAM on constrained Linux systems). No GPU required.
+- **Start from a pretrained model.** A persona corpus is far too small to teach a model language from scratch; that is what the base is for.
+- **LoRA first.** It's cheap, the checkpoints are tiny, and several personas can share one base. Rank 4–8 is plenty to start.
+- **Watch for forgetting.** Fine-tuning on one voice can erode general ability (`tests/learn.mjs` shows this in miniature). A lower learning rate, fewer steps and mixing in some general text all help.
+- **Memory** (float32): about 4 bytes × parameters, plus activations. 0.1B ≈ 0.8 GB; 1.5B ≈ 6 GB, and slow on CPU.
+- **Speed:** ≈ 1 s per trained token at 0.1B on one thread (see What's new).
 
 ---
 
@@ -280,13 +218,11 @@ node index.js export  [options]
 Linear-complexity recurrent model. No attention matrix — memory is O(N) in sequence length,
 not O(N²). Ideal for long-context soul-corpus training on CPU-constrained hardware.
 
-### Why BitNet b1.58?
-Ternary weights {-1, 0, +1} reduce the base model to ~3 bits/parameter. Zero matrix
-multiplications become additions. Memory footprint is ~4× smaller than float16.
+### Why not BitNet b1.58 (any more)?
+Ternary weights work for models *trained* ternary. Rounding a float-pretrained RWKV-7 to {-1, 0, +1} destroys about half of every matrix (AUDIT.md), so v4 keeps the base in float32.
 
-### Why Muon?
-Newton-Schulz-5 orthogonalization keeps weight matrices near the Stiefel manifold.
-Empirically faster convergence than AdamW on token prediction tasks.
+### Why AdamW instead of Muon?
+Muon is designed for full weight matrices. LoRA adapters are rank-4 strips, and AdamW is the standard, well-tested choice there.
 
 ### Why LoRA?
 We never touch the base model weights. The 3GB downloaded model is frozen.
@@ -339,6 +275,15 @@ See [LICENSE](LICENSE) for full text.
 ---
 
 ## Changelog
+
+### v4.0.0 (2026-10-11 · Kehai Interim + Kham)
+- **New engine:** the real RWKV-7 (x070), float32, official tensor names, exact gradients with LoRA, chunked BPTT. Matches the official math to 7·10⁻¹⁵.
+- **RWKV World tokenizer** in JS, identical to BlinkDL's.
+- **AdamW;** sane learning rates; checkpoints `brymar-v2` (LoRA JSON, or JSON + safetensors for full weights); `.rofl` is now the merged model as safetensors.
+- **CLI fixes:** eval no longer feeds the last prompt token twice; `--steps` / `--rank` defaults work; base-model load reports everything.
+- **Old engine** moved to `legacy/v3.3.4/`, kept to reproduce the audit. Its checkpoints cannot be loaded.
+- **Tests:** `tests/forward-ref.mjs`, `tests/gradcheck-rwkv7.mjs`, `tests/oomb.mjs`, `tests/learn.mjs`, `tests/tokenizer-ref.py`.
+
 
 ### v3.3.3
 - **Bug Fix:** Patched a critical matrix dimension mismatch in the Muon optimizer's Newton-Schulz-5 loop that was writing out-of-bounds `NaN`s and poisoning model weights on the first backward pass step.

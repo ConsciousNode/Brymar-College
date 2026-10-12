@@ -37,19 +37,18 @@ export async function exportAdapter(opts, terminal) {
 
   log(`Loading checkpoint: ${opts.checkpoint}`, 'info');
 
-  let payload;
+  // brymar-v2: rebuild the model (base + adapters, or full weights) and merge LoRA into it
+  const { RWKV7 } = await import('../model/rwkv7.js');
+  const { loadRWKV7From, modelTensors, writeSafetensors } = await import('../model/rwkv7_load.js');
+  const { readCheckpointMeta, loadCheckpoint } = await import('./checkpoint.js');
+  let payload, model;
   try {
-    const raw = await readFile(opts.checkpoint, 'utf8');
-    payload = JSON.parse(raw);
-  } catch (e) {
-    log(`Failed to read checkpoint: ${e.message}`, 'error');
-    return;
-  }
-
-  if (payload.version !== 'brymar-v1') {
-    log(`Unknown checkpoint version "${payload.version}"`, 'error');
-    return;
-  }
+    payload = await readCheckpointMeta(opts.checkpoint);
+    if (payload.baseModel && !payload.weightsFile) ({ model } = await loadRWKV7From(opts.model || payload.baseModel, log, { RWKV7 }));
+    else model = new RWKV7(payload.modelCfg);
+    await loadCheckpoint(opts.checkpoint, model);
+  } catch (e) { log(`Cannot export: ${e.message}`, 'error'); return; }
+  if (Object.keys(model.lora).length) { model.mergeLoRA(); log('LoRA adapters merged into the base weights', 'ok'); }
 
   const outDir  = opts.output ?? './exports/';
   const stem    = basename(opts.checkpoint, '.json');
@@ -80,31 +79,20 @@ export async function exportAdapter(opts, terminal) {
   const ext     = formatDef.extension;
   const outFile = join(outDir, `${stem}${ext}`);
 
+  if (format === 'rofl') {
+    // .rofl = the merged model in full precision, as a standard .safetensors with official RWKV-7 names
+    writeSafetensors(outFile, modelTensors(model), { format: 'rofl', fullName: formatDef.fullName, step: payload.step, loss: payload.loss, tokenizer: payload.tokenizer ?? '' });
+    const { statSync } = await import('node:fs');
+    log(`Exported → ${outFile} (${(statSync(outFile).size / 1048576).toFixed(1)} MB, safetensors, loadable with --model)`, 'ok');
+    return;
+  }
+
   log(`Format: ${format.toUpperCase()} — ${formatDef.fullName}`, 'info');
   log(`  ${formatDef.description}`, 'info');
 
-  // Collect all weight data from the checkpoint
-  const allWeights = [];
-  const weightMeta = [];
-
-  // Full weights (from full-weight checkpoint)
-  if (payload.weights && payload.weights.length > 0) {
-    for (const w of payload.weights) {
-      allWeights.push(new Float32Array(w.data));
-      weightMeta.push({ name: w.name, rows: w.rows, cols: w.cols, length: w.data.length });
-    }
-  }
-
-  // LoRA adapters
-  if (payload.adapters && payload.adapters.length > 0) {
-    for (let i = 0; i < payload.adapters.length; i++) {
-      const a = payload.adapters[i];
-      allWeights.push(new Float32Array(a.A));
-      weightMeta.push({ name: `lora.${i}.A`, rows: a.rank, cols: a.inDim, length: a.A.length });
-      allWeights.push(new Float32Array(a.B));
-      weightMeta.push({ name: `lora.${i}.B`, rows: a.outDim, cols: a.rank, length: a.B.length });
-    }
-  }
+  // Collect the merged model's weights (official names)
+  const allWeights = [], weightMeta = [];
+  for (const t of modelTensors(model)) { allWeights.push(t.data instanceof Float32Array ? t.data : Float32Array.from(t.data)); weightMeta.push({ name: t.name, shape: t.shape, length: t.data.length }); }
 
   if (allWeights.length === 0) {
     log('No weights found in checkpoint — nothing to export', 'warn');
@@ -142,7 +130,7 @@ export async function exportAdapter(opts, terminal) {
   const metadata = {
     format:       format,
     formatName:   formatDef.fullName,
-    version:      'brymar-v1',
+    version:      'brymar-v2',
     quantBits:    formatDef.quantBits,
     step:         payload.step,
     loss:         payload.loss,

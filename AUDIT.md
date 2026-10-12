@@ -1,11 +1,13 @@
 # Brymar College v3.3.4: audit (2026-10-11 · Kehai Interim)
 
+> **Resolved in v4.0.0** (same day): path 2 below. The real RWKV-7 engine (`model/rwkv7.js`) matches the official math to 7·10⁻¹⁵, has exact gradients (incl. LoRA), uses the RWKV World tokenizer, and keeps weights in float. The old engine and these audit tests live in `legacy/v3.3.4/`.
+
 Measured, not guessed. Both tests run against the real code in this repo:
 
 ```bash
 npm install
-node tests/weight-map.mjs [real-rwkv7.safetensors]   # what a real RWKV-7 checkpoint does when loaded
-node tests/gradcheck.mjs                             # every backward vs finite differences
+node legacy/v3.3.4/tests/weight-map.mjs [real-rwkv7.safetensors]   # what a real RWKV-7 checkpoint does when loaded
+node legacy/v3.3.4/tests/gradcheck.mjs              # every backward vs finite differences
 ```
 
 ## 1. The model is not RWKV-7, so most of a checkpoint is never used
@@ -17,7 +19,7 @@ Brymar's block is a simplified recurrent block with a per-channel running sum (R
 
 Its FFN has no receptance gate.
 
-Loading an RWKV-7-shaped checkpoint through `model/loader.js` (`tests/weight-map.mjs`):
+Loading an RWKV-7-shaped checkpoint through the old `model/loader.js` (`legacy/v3.3.4/tests/weight-map.mjs`):
 - **43 of 69 tensors are never used.** The log line "Applied 26 … (ignored 43)" is the only sign of it.
 - **14 of Brymar's 40 parameter sets stay at random initialisation**, including 7 full matrices per block: `att_g`, `W_x_kappa`, `W_x_a`, `W_x_w`, `W_x_rx2`, `W_x_kx2` and `Wr2`. `Wr2` gates the whole FFN output.
 - **The matrices that do load are rounded to ternary** on every forward (`BitLinear` always quantizes). That loses ≈51% of each matrix (relative error, Gaussian stand-ins; run it on a real checkpoint for the real number). Ternary works for models *trained* ternary, not for float-pretrained ones.
@@ -26,7 +28,7 @@ Also: the loader maps `time_mix_*` vectors (one number per channel) onto full ma
 
 ## 2. The backward pass is wrong almost everywhere
 
-`tests/gradcheck.mjs`, float forward (so quantization isn't the cause): **38 of 42 parameter groups get a wrong gradient.**
+`legacy/v3.3.4/tests/gradcheck.mjs`, float forward (so quantization isn't the cause): **38 of 42 parameter groups get a wrong gradient.**
 
 - **Correct:** the head, and the last block's channel-mix (`Wr2`, `Wk2`, `Wv2`).
 - **Time-mix:**

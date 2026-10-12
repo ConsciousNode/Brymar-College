@@ -1,7 +1,7 @@
 {
   "name": "brymar-college",
-  "version": "3.3.4",
-  "description": "ConsciousNode LoRA & full-weight fine-tuning studio for RWKV-v7. Named for Deltron 3030.",
+  "version": "4.0.0",
+  "description": "ConsciousNode LoRA & full-weight fine-tuning studio for real RWKV-7 (x070) models. Named for Deltron 3030.",
   "type": "module",
   "main": "index.js",
   "scripts": {
@@ -12,6 +12,7 @@
     "gui": "npx --yes @neutralinojs/neu run",
     "build": "bash scripts/build.sh",
     "gen-icons": "node scripts/gen-icons.js",
+    "test": "node tests/gradcheck-rwkv7.mjs && node tests/oomb.mjs",
     "neu:update": "npx --yes @neutralinojs/neu update"
   },
   "dependencies": {
