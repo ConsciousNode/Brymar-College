@@ -1,0 +1,31 @@
+{
+  "name": "brymar-college",
+  "version": "3.3.4",
+  "description": "ConsciousNode LoRA & full-weight fine-tuning studio for RWKV-v7. Named for Deltron 3030.",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "train": "node index.js train",
+    "train:full": "node index.js train --mode full",
+    "eval": "node index.js eval",
+    "export": "node index.js export",
+    "gui": "npx --yes @neutralinojs/neu run",
+    "build": "bash scripts/build.sh",
+    "gen-icons": "node scripts/gen-icons.js",
+    "neu:update": "npx --yes @neutralinojs/neu update"
+  },
+  "dependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@huggingface/gguf": "^0.4.2",
+    "@huggingface/hub": "^0.15.0",
+    "chalk": "^5.3.0",
+    "cli-progress": "^3.12.0",
+    "commander": "^12.0.0",
+    "fluent-ffmpeg": "^2.1.3",
+    "pickleparser": "^0.2.1",
+    "sharp": "^0.33.0",
+    "unzipper": "^0.12.3",
+    "ws": "^8.20.1"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Dark background with rounded corners -->
+  <rect width="512" height="512" rx="80" fill="#0d0d0d"/>
+
+  <!-- CRT scanline texture hint -->
+  <defs>
+    <pattern id="scan" x="0" y="0" width="4" height="4" patternUnits="userSpaceOnUse">
+      <rect width="4" height="2" fill="#00e5a0" opacity="0.25"/>
+    </pattern>
+    <!-- Phosphor glow filter -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Scanline overlay -->
+  <rect width="512" height="512" rx="80" fill="url(#scan)" opacity="0.06"/>
+
+  <!-- Block matrix — the ■■■ terminal banner, stylised as a glyph grid -->
+  <!-- Top row: three blocks (full / full / half-opacity) -->
+  <g fill="#00e5a0" filter="url(#glow)">
+    <!-- Row 1 -->
+    <rect x="120" y="120" width="72" height="72" rx="8"/>
+    <rect x="208" y="120" width="72" height="72" rx="8"/>
+    <rect x="296" y="120" width="96" height="72" rx="8" opacity="0.45"/>
+
+    <!-- Row 2 — full-width bar (the model's hidden dimension, visualised) -->
+    <rect x="120" y="208" width="272" height="72" rx="8" opacity="0.82"/>
+
+    <!-- Row 3 — partial / scattered (sparse activation motif) -->
+    <rect x="120" y="296" width="72" height="72" rx="8" opacity="0.55"/>
+    <rect x="208" y="296" width="120" height="72" rx="8"/>
+    <rect x="344" y="296" width="48" height="72" rx="8" opacity="0.35"/>
+
+    <!-- Accent underline bar -->
+    <rect x="120" y="384" width="272" height="12" rx="4" opacity="0.28"/>
+  </g>
+
+  <!-- Corner accent dots (CRT phosphor trace) -->
+  <circle cx="140" cy="140" r="4" fill="#00ffb3" opacity="0.5"/>
+  <circle cx="372" cy="140" r="4" fill="#00ffb3" opacity="0.3"/>
+  <circle cx="140" cy="368" r="4" fill="#00ffb3" opacity="0.3"/>
+</svg>

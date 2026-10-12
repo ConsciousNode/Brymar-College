@@ -1,0 +1,133 @@
+<h3>What is Brymar College?</h3>
+<p>
+  Brymar College v3.3.4 is a local LoRA and full-weight fine-tuning studio for RWKV-v7 models, built by ConsciousNode SoftWorks.
+  It runs entirely on your machine — no cloud, no telemetry, no network required after model download.
+  Named for Deltron 3030's <em>Upgrade</em>. Because it trains in multimodality, supporting 44 distinct formats including video, audio, and images.
+</p>
+
+<h3>Training Modes</h3>
+<table class="field-table">
+  <tr>
+    <td>LoRA</td>
+    <td>Fine-tune only small adapter matrices (A/B) while keeping the base model frozen.
+        Fast, memory-efficient, small checkpoints. Recommended for soul-corpus distillation.</td>
+  </tr>
+  <tr>
+    <td>Full Weight</td>
+    <td>Train ALL model parameters end-to-end (embeddings, LayerNorms, all layers, head).
+        Slower, larger checkpoints, but maximum expressiveness. Use for deep fine-tuning.</td>
+  </tr>
+</table>
+
+<h3>Configuration Fields</h3>
+<table class="field-table">
+  <tr>
+    <td>Base Model</td>
+    <td>The RWKV-v7 World model to fine-tune. Default: <code>RWKV-v7-World-1.5B</code>.
+        First run downloads from HuggingFace (~3GB). Subsequent runs use the cached copy.</td>
+  </tr>
+  <tr>
+    <td>Training Mode</td>
+    <td>Choose <code>LoRA</code> for adapter-only training or <code>Full Weight</code>
+        for end-to-end training of all parameters.</td>
+  </tr>
+  <tr>
+    <td>LoRA Rank</td>
+    <td>Adapter rank <code>r</code> (LoRA mode only). Lower = fewer parameters, faster, less expressive.
+        <code>r=4</code> is the recommended start.
+        Increase to <code>8</code> or <code>16</code> if loss plateaus early.</td>
+  </tr>
+  <tr>
+    <td>Training Steps</td>
+    <td>Total optimizer steps. One step = <code>grad_accum_steps</code> sequences processed.
+        2000 steps is a reasonable baseline run. Watch loss — stop early if it flattens.</td>
+  </tr>
+  <tr>
+    <td>LR Schedule</td>
+    <td>Learning rate schedule: <code>Cosine</code> (warmup + decay), <code>Manual</code> (constant),
+        <code>Step</code> (multiply by 0.5 every N steps), or <code>Exponential</code> (smooth decay).</td>
+  </tr>
+  <tr>
+    <td>Corpus Directory</td>
+    <td>Folder containing your training data. Supports multiple modalities:<br>
+        <b>Text:</b> .txt, .md, .rst, .csv, .tsv, .json, .jsonl, .xml, .html, .yaml, .yml, .toml, .log, .tex, .org, .adoc<br>
+        <b>Image:</b> .png, .jpg, .jpeg, .webp, .tiff, .gif, .avif, .svg, .bmp<br>
+        <b>Audio:</b> .wav (native PCM parser)</td>
+  </tr>
+  <tr>
+    <td>Resume Checkpoint</td>
+    <td>Optional. Path to a <code>.json</code> checkpoint from a previous run.
+        Restores weights and resumes from the saved step count.</td>
+  </tr>
+</table>
+
+<h4>Supported Base Models</h4>
+<p>
+  Brymar College strictly uses `.safetensors` or `.gguf` weights natively. 
+  <strong>If you provide a PyTorch `.pth` file</strong>, the system will seamlessly invoke a zero-dependency Python background worker to convert it to a `.safetensors` file on the fly before loading it into memory. Python 3 is required for this feature.
+</p>
+
+<h4>Compute Backend</h4>
+<p>
+  By default, Brymar College runs in <strong>Auto</strong> mode, which attempts to offload matrix multiplication to an OpenCL-compatible GPU (like AMD GCN architecture). If your driver does not support `node-opencl`, you can explicitly set the Compute Backend to <strong>CPU Only</strong> to bypass hardware detection.
+</p>
+
+<h4>Supported Corpus Formats</h4>
+<table class="field-table">
+  <tr>
+    <td><code>.rofl</code></td>
+    <td><b>Recurrent Omnimodal Friston Language model</b> — Full FP32 precision.
+        No quality loss. Largest file size.</td>
+  </tr>
+  <tr>
+    <td><code>.lmao</code></td>
+    <td><b>Language Model, Active-inference, Omnimodal</b> — Q4 symmetric quantization.
+        4-bit weights with per-group scaling. Good balance of quality and size.</td>
+  </tr>
+  <tr>
+    <td><code>.fuctrump</code></td>
+    <td><b>Fristonian Underpinning Capabilities Transformer-agnostic Recurrent
+        Unconcerned with Model Parameters</b> — Q2 ternary quantization.
+        {-1, 0, +1} weights. Maximum compression, some quality trade-off.</td>
+  </tr>
+  <tr>
+    <td><code>.json</code></td>
+    <td>Legacy JSON format. Backward compatible with Phase 3 exports.</td>
+  </tr>
+</table>
+
+<h3>Hardware Requirements</h3>
+<p>
+  Designed for constrained hardware. Tested target: Intel Core i7 Sandy Bridge, 12GB RAM + zRAM,
+  AMD Radeon HD 7570. The 1.5B model runs comfortably in 12GB physical RAM.
+  The 2.9B model requires zRAM headroom (~21GB effective). GPU is not required for Phases 1–4.
+  Full-weight training uses more memory than LoRA mode.
+</p>
+
+<h3>Output</h3>
+<p>
+  Checkpoints are saved to <code>./checkpoints/</code> every 200 steps as JSON files.
+  In LoRA mode, only adapter weights are stored. In Full Weight mode, all model parameters are saved.
+  Use <em>Export Model</em> to package a checkpoint in .rofl, .lmao, or .fuctrump format.
+</p>
+
+<h3>Keyboard Shortcuts</h3>
+<table class="field-table">
+  <tr><td>Escape</td><td>Close this help window.</td></tr>
+</table>
+
+<h3>CLI Usage</h3>
+<p>The GUI is additive. The CLI remains fully functional:</p>
+<p>
+  <code>node index.js train --corpus ./corpus --steps 2000 --rank 4</code><br>
+  <code>node index.js train --mode full --steps 1000</code><br>
+  <code>node index.js export --checkpoint ./checkpoints/checkpoint-002000.json --format rofl</code><br>
+  <code>node index.js export --checkpoint ./checkpoints/checkpoint-002000.json --format lmao</code><br>
+  <code>node index.js export --checkpoint ./checkpoints/checkpoint-002000.json --format fuctrump</code>
+</p>
+
+<h3>ConsciousNode SoftWorks</h3>
+<p>
+  Brymar College is part of the ConsciousNode stack alongside HTMLNLM, RAG Time, LocalVocal,
+  and Chorus. All tools: single-file or minimal-dependency, offline-first, CPU-native where possible.
+</p>

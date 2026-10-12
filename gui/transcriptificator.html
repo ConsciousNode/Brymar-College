@@ -1,0 +1,1593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Transcriptificator v7.0</title>
+    <link rel="stylesheet" href="style.css"> <!-- Fallback, might not be needed but nice to have -->
+    <style>
+        :root {
+            --bg-color: #050505;
+            --sidebar-bg: #0a0a0a;
+            --text-primary: #00ff41;
+            --text-secondary: #008f11;
+            --accent-color: #00ff41;
+            --accent-glow: 0 0 10px rgba(0, 255, 65, 0.5);
+            --border-color: #003b00;
+            --msg-user-bg: #001a00;
+            --msg-ai-bg: #000d00;
+            --highlight: #002b00;
+            --warning-color: #ff4400;
+            --info-color: #00aaff;
+            --modified-color: #ffaa00;
+        }
+
+        body {
+            font-family: "Courier New", Courier, monospace;
+            margin: 0; padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+            text-shadow: 0 0 2px rgba(0, 255, 65, 0.3);
+        }
+
+        body::after {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18,16,16,0) 50%, rgba(0,0,0,0.25) 50%),
+                        linear-gradient(90deg, rgba(255,0,0,0.06), rgba(0,255,0,0.02), rgba(0,0,255,0.06));
+            z-index: 1000;
+            background-size: 100% 2px, 3px 100%;
+            pointer-events: none;
+        }
+
+        #sidebar {
+            width: 340px;
+            background: var(--sidebar-bg);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            position: relative;
+            z-index: 1;
+            overflow-y: auto;
+        }
+
+        .sidebar-header {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            background: #000;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        h3 {
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            font-size: 0.95rem;
+            margin: 0 0 1rem 0;
+            color: var(--text-primary);
+        }
+
+        .btn {
+            background-color: transparent;
+            color: var(--text-primary);
+            padding: 0.5rem 1rem;
+            border: 1px solid var(--accent-color);
+            border-radius: 0;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-family: inherit;
+            font-weight: bold;
+            transition: all 0.2s;
+            width: 100%;
+            text-align: center;
+            text-transform: uppercase;
+            box-shadow: var(--accent-glow);
+        }
+
+        .btn:hover {
+            background-color: var(--accent-color);
+            color: #000;
+            box-shadow: 0 0 15px var(--accent-color);
+        }
+
+        .btn-small {
+            padding: 0.3rem 0.6rem;
+            font-size: 0.75rem;
+            width: auto;
+        }
+
+        .btn-warning {
+            border-color: var(--warning-color);
+            color: var(--warning-color);
+        }
+        .btn-warning:hover {
+            background-color: var(--warning-color);
+            color: #000;
+        }
+
+        .btn-info {
+            border-color: var(--info-color);
+            color: var(--info-color);
+        }
+        .btn-info:hover {
+            background-color: var(--info-color);
+            color: #000;
+        }
+
+        .btn-modified {
+            border-color: var(--modified-color);
+            color: var(--modified-color);
+        }
+        .btn-modified:hover {
+            background-color: var(--modified-color);
+            color: #000;
+        }
+
+        input[type=file] {
+            font-size: 100px;
+            position: absolute;
+            left: 0; top: 0;
+            opacity: 0;
+        }
+
+        .file-input-wrapper {
+            position: relative;
+            overflow: hidden;
+            cursor: pointer;
+            margin-bottom: 0.4rem;
+        }
+
+        #main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            z-index: 1;
+        }
+
+        .toolbar {
+            padding: 0.75rem 1rem;
+            background: #000;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .toolbar-group {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .toolbar-group label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            white-space: nowrap;
+        }
+
+        .toolbar-group input[type="text"],
+        .toolbar-group input[type="date"],
+        .toolbar-group select {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            padding: 0.3rem 0.5rem;
+            font-family: inherit;
+            font-size: 0.85rem;
+        }
+
+        .toolbar-group input[type="text"]:focus,
+        .toolbar-group input[type="date"]:focus,
+        .toolbar-group select:focus {
+            outline: none;
+            border-color: var(--accent-color);
+            box-shadow: var(--accent-glow);
+        }
+
+        .toolbar-group input[type="checkbox"] {
+            width: 16px; height: 16px;
+            cursor: pointer;
+        }
+
+        .filter-section {
+            padding: 0.75rem;
+            border-bottom: 1px solid var(--border-color);
+            background: #000;
+        }
+
+        .filter-section h4 {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin: 0 0 0.5rem 0;
+        }
+
+        .filter-row {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 0.4rem;
+            align-items: center;
+        }
+
+        .filter-row label {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            min-width: 60px;
+        }
+
+        .filter-row input {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            padding: 0.25rem 0.4rem;
+            font-family: inherit;
+            font-size: 0.75rem;
+            flex: 1;
+        }
+
+        #conversation-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0.5rem;
+        }
+
+        .conv-item {
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            border-left: 3px solid var(--border-color);
+            background: var(--bg-color);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .conv-item:hover {
+            background: var(--highlight);
+            border-color: var(--text-secondary);
+        }
+
+        .conv-item.active {
+            background: var(--highlight);
+            border-color: var(--accent-color);
+            box-shadow: var(--accent-glow);
+        }
+
+        .conv-item.modified {
+            border-color: var(--modified-color);
+        }
+
+        .conv-item-title {
+            font-size: 0.85rem;
+            font-weight: bold;
+            color: var(--text-primary);
+            margin-bottom: 0.25rem;
+            text-transform: uppercase;
+        }
+
+        .conv-item-date { font-size: 0.7rem; color: var(--text-secondary); }
+        .conv-item-preview {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            margin-top: 0.25rem;
+            max-height: 2.4em;
+            overflow: hidden;
+        }
+
+        .modified-badge {
+            display: inline-block;
+            font-size: 0.6rem;
+            color: var(--modified-color);
+            border: 1px solid var(--modified-color);
+            padding: 0 4px;
+            margin-left: 6px;
+            vertical-align: middle;
+        }
+
+        #chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 2rem;
+            background: var(--bg-color);
+        }
+
+        /* SCAN RESULTS PANEL */
+        #scan-panel {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+            background: var(--bg-color);
+            display: none;
+        }
+
+        .scan-result-row {
+            display: grid;
+            grid-template-columns: 1fr 80px 50px;
+            gap: 0.5rem;
+            padding: 0.5rem;
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            font-size: 0.78rem;
+            transition: background 0.15s;
+        }
+
+        .scan-result-row:hover { background: var(--highlight); }
+
+        .scan-result-title { color: var(--accent-color); font-weight: bold; }
+        .scan-result-snippet {
+            grid-column: 1 / -1;
+            color: var(--text-secondary);
+            font-size: 0.72rem;
+            margin-top: 0.2rem;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .scan-result-snippet .scan-hit {
+            background: rgba(255,68,0,0.3);
+            color: var(--warning-color);
+            padding: 0 2px;
+        }
+
+        .scan-header-row {
+            display: grid;
+            grid-template-columns: 1fr 80px 50px;
+            gap: 0.5rem;
+            padding: 0.5rem;
+            border-bottom: 1px solid var(--accent-color);
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+        }
+
+        .message {
+            margin-bottom: 1.5rem;
+            padding: 1rem;
+            border-left: 4px solid;
+            line-height: 1.6;
+            position: relative;
+        }
+
+        .message.user {
+            background-color: var(--msg-user-bg);
+            border-color: var(--accent-color);
+        }
+
+        .message.assistant {
+            background-color: var(--msg-ai-bg);
+            border-color: var(--text-secondary);
+        }
+
+        .message.highlight-match {
+            box-shadow: 0 0 10px rgba(255, 68, 0, 0.5);
+            border-color: var(--warning-color);
+        }
+
+        .message-header {
+            font-size: 0.75rem;
+            font-weight: bold;
+            color: var(--accent-color);
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .message-content { white-space: pre-wrap; word-break: break-word; }
+
+        .search-highlight {
+            background-color: rgba(255, 68, 0, 0.3);
+            padding: 2px 4px;
+            border: 1px solid var(--warning-color);
+        }
+
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--text-secondary);
+            text-align: center;
+        }
+
+        .status-bar {
+            padding: 0.5rem 1rem;
+            background: #000;
+            border-top: 1px solid var(--border-color);
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            display: flex;
+            justify-content: space-between;
+            text-transform: uppercase;
+        }
+
+        /* DIFF VIEW */
+        .diff-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .diff-pane {
+            background: var(--bg-color);
+            border: 1px solid var(--border-color);
+            padding: 0.75rem;
+            font-size: 0.78rem;
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .diff-pane h5 {
+            margin: 0 0 0.5rem 0;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .diff-pane.before h5 { color: var(--warning-color); }
+        .diff-pane.after h5 { color: var(--accent-color); }
+
+        .diff-removed { background: rgba(255,68,0,0.2); color: var(--warning-color); }
+        .diff-added { background: rgba(0,255,65,0.15); color: var(--accent-color); }
+
+        /* FLAT FILE DISPLAY */
+        .flatfile-container {
+            padding: 2rem;
+            white-space: pre-wrap;
+            word-break: break-word;
+            line-height: 1.6;
+            font-size: 0.9rem;
+            color: var(--text-primary);
+        }
+
+        /* MODAL */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0; top: 0;
+            width: 100%; height: 100%;
+            background-color: rgba(0,0,0,0.85);
+        }
+
+        .modal-content {
+            background-color: var(--sidebar-bg);
+            margin: 5% auto;
+            padding: 2rem;
+            border: 2px solid var(--accent-color);
+            width: 85%;
+            max-width: 900px;
+            box-shadow: 0 0 20px var(--accent-color);
+            max-height: 85vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            font-size: 1.1rem;
+            color: var(--accent-color);
+            margin-bottom: 1.5rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .modal-body { margin-bottom: 1.5rem; }
+
+        .modal-footer {
+            display: flex;
+            gap: 1rem;
+            justify-content: flex-end;
+        }
+
+        .close {
+            color: var(--text-secondary);
+            float: right;
+            font-size: 2rem;
+            font-weight: bold;
+            cursor: pointer;
+            line-height: 1;
+        }
+
+        .close:hover { color: var(--accent-color); }
+
+        /* AUDIT LOG MODAL */
+        .audit-entry {
+            border-bottom: 1px solid var(--border-color);
+            padding: 0.5rem 0;
+            font-size: 0.78rem;
+        }
+
+        .audit-entry .audit-conv { color: var(--accent-color); font-weight: bold; }
+        .audit-entry .audit-meta { color: var(--text-secondary); font-size: 0.7rem; }
+        .audit-entry .audit-removed { color: var(--warning-color); }
+        .audit-entry .audit-added { color: var(--accent-color); }
+
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #000; }
+        ::-webkit-scrollbar-thumb { background: var(--text-secondary); }
+        ::-webkit-scrollbar-thumb:hover { background: var(--accent-color); }
+
+        .tab-bar {
+            display: flex;
+            border-bottom: 1px solid var(--border-color);
+            background: #000;
+        }
+
+        .tab {
+            padding: 0.4rem 1rem;
+            font-size: 0.75rem;
+            cursor: pointer;
+            border-right: 1px solid var(--border-color);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+            transition: all 0.2s;
+        }
+
+        .tab:hover { color: var(--text-primary); background: var(--highlight); }
+        .tab.active { color: var(--accent-color); border-bottom: 2px solid var(--accent-color); }
+        .tab.has-data { color: var(--modified-color); }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <div class="sidebar-header">
+        <h3>> TRANSCRIPTIFICATOR v7.0</h3>
+
+        <!-- JSON loader -->
+        <div class="file-input-wrapper">
+            <button class="btn btn-small">Load JSON Export</button>
+            <input type="file" id="fileInput" accept=".json">
+        </div>
+
+        <!-- Flat file loader -->
+        <div class="file-input-wrapper">
+            <button class="btn btn-small btn-info">Load TXT / MD File</button>
+            <input type="file" id="flatFileInput" accept=".txt,.md">
+        </div>
+
+        <div id="file-status" style="font-size:0.75rem;color:var(--text-secondary);margin-top:0.4rem;word-break:break-all;"></div>
+    </div>
+
+    <!-- Date filter -->
+    <div class="filter-section">
+        <h4>Date Filter</h4>
+        <div class="filter-row">
+            <label>FROM:</label>
+            <input type="date" id="date-from">
+        </div>
+        <div class="filter-row">
+            <label>TO:</label>
+            <input type="date" id="date-to">
+        </div>
+        <div style="display:flex;gap:0.5rem;margin-top:0.5rem;">
+            <button class="btn btn-small" id="apply-filter">APPLY</button>
+            <button class="btn btn-small" id="clear-filter">CLEAR</button>
+        </div>
+        <div id="filter-status" style="font-size:0.7rem;color:var(--text-secondary);margin-top:0.4rem;"></div>
+    </div>
+
+    <!-- Search & Replace -->
+    <div class="filter-section">
+        <h4>Search &amp; Replace</h4>
+        <div class="filter-row">
+            <label>FIND:</label>
+            <input type="text" id="search-term" placeholder="search term">
+        </div>
+        <div class="filter-row">
+            <label>REPLACE:</label>
+            <input type="text" id="replace-term" placeholder="replacement text">
+        </div>
+        <div style="display:flex;gap:0.5rem;margin-top:0.5rem;flex-wrap:wrap;">
+            <button class="btn btn-small" id="preview-replace">PREVIEW</button>
+            <button class="btn btn-small btn-warning" id="apply-replace">REPLACE</button>
+            <button class="btn btn-small btn-info" id="scan-all-btn">SCAN ALL</button>
+        </div>
+        <div id="replace-status" style="font-size:0.7rem;color:var(--text-secondary);margin-top:0.4rem;"></div>
+    </div>
+
+    <!-- Audit log controls -->
+    <div class="filter-section">
+        <h4>Audit Log <span id="audit-count" style="color:var(--modified-color);"></span></h4>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+            <button class="btn btn-small btn-modified" id="view-audit-btn">VIEW LOG</button>
+            <button class="btn btn-small btn-modified" id="export-audit-txt">EXPORT TXT</button>
+            <button class="btn btn-small btn-modified" id="export-audit-json">EXPORT JSON</button>
+        </div>
+    </div>
+
+    <!-- Session save/restore -->
+    <div class="filter-section">
+        <h4>Session</h4>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+            <button class="btn btn-small btn-info" id="save-session-btn">SAVE SESSION</button>
+            <div class="file-input-wrapper" style="flex:1;">
+                <button class="btn btn-small btn-info" style="width:100%;">RESTORE SESSION</button>
+                <input type="file" id="restoreSessionInput" accept=".json">
+            </div>
+        </div>
+    </div>
+
+    <div id="conversation-list">
+        <div style="padding:1rem;text-align:center;color:var(--text-secondary);">
+            [ NO DATA LOADED ]
+        </div>
+    </div>
+</div>
+
+<div id="main">
+    <!-- Toolbar -->
+    <div class="toolbar" id="toolbar" style="display:none;">
+        <div class="toolbar-group">
+            <label for="user-name">USER_ID:</label>
+            <input type="text" id="user-name" value="USER" placeholder="Enter Name">
+        </div>
+        <div class="toolbar-group">
+            <label for="ai-name">AI_ID:</label>
+            <input type="text" id="ai-name" value="CLAUDE" placeholder="Enter Name">
+        </div>
+        <div class="toolbar-group">
+            <label for="export-format">FORMAT:</label>
+            <select id="export-format">
+                <option value="txt">TXT</option>
+                <option value="md">MD</option>
+                <option value="json">JSON</option>
+            </select>
+        </div>
+        <div class="toolbar-group">
+            <label for="filename-template">FILENAME:</label>
+            <input type="text" id="filename-template" value="{date}_{title}" style="min-width:180px;">
+        </div>
+        <div class="toolbar-group">
+            <input type="checkbox" id="extract-i-statements">
+            <label for="extract-i-statements">I-STATEMENTS</label>
+        </div>
+        <button class="btn btn-small" id="export-btn">DOWNLOAD</button>
+        <button class="btn btn-small btn-modified" id="batch-export-all-btn">EXPORT ALL</button>
+        <button class="btn btn-small btn-modified" id="batch-export-modified-btn">EXPORT MODIFIED</button>
+    </div>
+
+    <!-- Tab bar for chat vs scan -->
+    <div class="tab-bar" id="tab-bar" style="display:none;">
+        <div class="tab active" id="tab-chat" onclick="showTab('chat')">TRANSCRIPT</div>
+        <div class="tab" id="tab-scan" onclick="showTab('scan')">SCAN RESULTS</div>
+    </div>
+
+    <!-- Transcript view -->
+    <div id="chat-container">
+        <div class="empty-state">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:1rem;opacity:0.5;color:var(--text-secondary);"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+            <p>> WAITING FOR INPUT...</p>
+            <p style="font-size:0.8rem;">LOAD JSON EXPORT OR TXT/MD FILE</p>
+        </div>
+    </div>
+
+    <!-- Scan results view -->
+    <div id="scan-panel"></div>
+
+    <div class="status-bar" id="status-bar" style="display:none;">
+        <span id="conv-info">NO CONVERSATION SELECTED</span>
+        <span id="msg-count">0 MSGS</span>
+    </div>
+</div>
+
+<!-- Replace Confirmation + Diff Modal -->
+<div id="replace-modal" class="modal">
+    <div class="modal-content">
+        <span class="close" id="close-replace">&times;</span>
+        <div class="modal-header">Confirm Replacement</div>
+        <div class="modal-body" id="replace-preview"></div>
+        <div class="modal-footer">
+            <button class="btn btn-small" id="cancel-replace">CANCEL</button>
+            <button class="btn btn-small btn-warning" id="confirm-replace">CONFIRM REPLACE</button>
+        </div>
+    </div>
+</div>
+
+<!-- Audit Log Modal -->
+<div id="audit-modal" class="modal">
+    <div class="modal-content">
+        <span class="close" id="close-audit">&times;</span>
+        <div class="modal-header">Audit Log — Remediation Record</div>
+        <div class="modal-body" id="audit-modal-body"></div>
+        <div class="modal-footer">
+            <button class="btn btn-small" id="close-audit-btn">CLOSE</button>
+        </div>
+    </div>
+</div>
+
+<script src="neutralino.js"></script>
+<script>
+    if (window.Neutralino) Neutralino.init();
+    // ─── GLOBAL STATE ────────────────────────────────────────────────────────
+    let conversations = [];
+    let filteredConversations = [];
+    let currentConvIndex = null;
+    let dateFilter = { from: null, to: null };
+    let searchMatches = [];
+    let auditLog = [];
+    let modifiedConvIndices = new Set();
+    let flatFileMode = false;
+    let flatFileContent = '';
+    let flatFileName = '';
+    let currentTab = 'chat';
+
+    // ─── DOM REFS ────────────────────────────────────────────────────────────
+    const fileInput = document.getElementById('fileInput');
+    const flatFileInput = document.getElementById('flatFileInput');
+    const convList = document.getElementById('conversation-list');
+    const chatContainer = document.getElementById('chat-container');
+    const scanPanel = document.getElementById('scan-panel');
+    const toolbar = document.getElementById('toolbar');
+    const tabBar = document.getElementById('tab-bar');
+    const statusBar = document.getElementById('status-bar');
+    const convInfo = document.getElementById('conv-info');
+    const msgCount = document.getElementById('msg-count');
+    const userNameInput = document.getElementById('user-name');
+    const aiNameInput = document.getElementById('ai-name');
+    const exportFormatSelect = document.getElementById('export-format');
+    const exportBtn = document.getElementById('export-btn');
+    const fileStatus = document.getElementById('file-status');
+    const dateFromInput = document.getElementById('date-from');
+    const dateToInput = document.getElementById('date-to');
+    const applyFilterBtn = document.getElementById('apply-filter');
+    const clearFilterBtn = document.getElementById('clear-filter');
+    const filterStatus = document.getElementById('filter-status');
+    const filenameTemplate = document.getElementById('filename-template');
+    const searchTermInput = document.getElementById('search-term');
+    const replaceTermInput = document.getElementById('replace-term');
+    const previewReplaceBtn = document.getElementById('preview-replace');
+    const applyReplaceBtn = document.getElementById('apply-replace');
+    const replaceStatus = document.getElementById('replace-status');
+    const replaceModal = document.getElementById('replace-modal');
+    const replacePreview = document.getElementById('replace-preview');
+    const extractIStatements = document.getElementById('extract-i-statements');
+    const auditCount = document.getElementById('audit-count');
+
+    // ─── EVENT LISTENERS ─────────────────────────────────────────────────────
+    fileInput.addEventListener('change', handleFileUpload);
+    flatFileInput.addEventListener('change', handleFlatFileUpload);
+    exportBtn.addEventListener('click', exportConversation);
+    applyFilterBtn.addEventListener('click', applyDateFilter);
+    clearFilterBtn.addEventListener('click', clearDateFilter);
+    previewReplaceBtn.addEventListener('click', previewReplacements);
+    applyReplaceBtn.addEventListener('click', showReplaceModal);
+    document.getElementById('scan-all-btn').addEventListener('click', scanAllConversations);
+    document.getElementById('close-replace').addEventListener('click', () => replaceModal.style.display = 'none');
+    document.getElementById('cancel-replace').addEventListener('click', () => replaceModal.style.display = 'none');
+    document.getElementById('confirm-replace').addEventListener('click', applyReplacements);
+    document.getElementById('view-audit-btn').addEventListener('click', showAuditModal);
+    document.getElementById('export-audit-txt').addEventListener('click', () => exportAuditLog('txt'));
+    document.getElementById('export-audit-json').addEventListener('click', () => exportAuditLog('json'));
+    document.getElementById('batch-export-all-btn').addEventListener('click', () => batchExport(false));
+    document.getElementById('batch-export-modified-btn').addEventListener('click', () => batchExport(true));
+    document.getElementById('save-session-btn').addEventListener('click', saveSession);
+    document.getElementById('restoreSessionInput').addEventListener('change', restoreSession);
+    document.getElementById('close-audit').addEventListener('click', () => document.getElementById('audit-modal').style.display = 'none');
+    document.getElementById('close-audit-btn').addEventListener('click', () => document.getElementById('audit-modal').style.display = 'none');
+
+    [userNameInput, aiNameInput].forEach(input => {
+        input.addEventListener('input', () => {
+            if (currentConvIndex !== null && !flatFileMode) renderConversation(currentConvIndex);
+        });
+    });
+
+    // ─── TAB MANAGEMENT ──────────────────────────────────────────────────────
+    function showTab(tab) {
+        currentTab = tab;
+        document.getElementById('tab-chat').classList.toggle('active', tab === 'chat');
+        document.getElementById('tab-scan').classList.toggle('active', tab === 'scan');
+        chatContainer.style.display = tab === 'chat' ? 'block' : 'none';
+        scanPanel.style.display = tab === 'scan' ? 'block' : 'none';
+    }
+
+    // ─── JSON FILE LOAD ──────────────────────────────────────────────────────
+    function handleFileUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        flatFileMode = false;
+        fileStatus.textContent = `LOADING: ${file.name}...`;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const json = JSON.parse(e.target.result);
+                parseAndStore(json);
+                fileStatus.textContent = `SUCCESS: ${file.name} (${conversations.length} CONVOS)`;
+            } catch (err) {
+                alert('ERROR PARSING JSON. CHECK FORMAT.');
+                fileStatus.textContent = 'ERROR: INVALID FILE';
+            }
+        };
+        reader.readAsText(file);
+    }
+
+    // ─── FLAT FILE LOAD ──────────────────────────────────────────────────────
+    function handleFlatFileUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        flatFileMode = true;
+        flatFileName = file.name;
+        fileStatus.textContent = `LOADING: ${file.name}...`;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            flatFileContent = e.target.result;
+            fileStatus.textContent = `FLAT FILE: ${file.name}`;
+            toolbar.style.display = 'flex';
+            tabBar.style.display = 'flex';
+            statusBar.style.display = 'flex';
+            showTab('chat');
+            renderFlatFile();
+            // Add to conversation list as a single-entry sidebar item
+            conversations = [{
+                title: flatFileName,
+                date: new Date().toISOString(),
+                messages: [{ role: 'flat', content: flatFileContent }],
+                rawDate: new Date(),
+                isFlat: true
+            }];
+            filteredConversations = [...conversations];
+            currentConvIndex = 0;
+            renderSidebar();
+            convInfo.textContent = `FLAT FILE: ${flatFileName}`;
+            msgCount.textContent = `${flatFileContent.split('\n').length} LINES`;
+        };
+        reader.readAsText(file);
+    }
+
+    function renderFlatFile(highlightTerm = null) {
+        chatContainer.innerHTML = '';
+        let content = escapeHtml(flatFileContent);
+        if (highlightTerm) {
+            const regex = new RegExp(`(${escapeRegex(highlightTerm)})`, 'gi');
+            content = content.replace(regex, '<span class="search-highlight">$1</span>');
+        }
+        chatContainer.innerHTML = `<div class="flatfile-container">${content}</div>`;
+    }
+
+    // ─── JSON PARSING ─────────────────────────────────────────────────────────
+    function extractTextContent(contentField) {
+        if (!contentField) return "";
+        if (typeof contentField === 'string') return contentField;
+        if (Array.isArray(contentField)) {
+            return contentField.map(item => {
+                if (typeof item === 'string') return item;
+                if (item.text) return item.text;
+                if (item.content && typeof item.content === 'string') return item.content;
+                return "";
+            }).filter(t => t).join("");
+        }
+        if (typeof contentField === 'object' && contentField.text) return contentField.text;
+        return String(contentField);
+    }
+
+    function parseAndStore(data) {
+        let rawConvs = [];
+        if (Array.isArray(data)) rawConvs = data;
+        else if (data.conversations && Array.isArray(data.conversations)) rawConvs = data.conversations;
+        else rawConvs = [data];
+
+        conversations = rawConvs.map((conv, idx) => {
+            let title = conv.name || conv.title || `Conversation ${idx + 1}`;
+            let date = conv.create_time || conv.created_at || conv.date || 'UNKNOWN_DATE';
+            let messages = [];
+
+            if (conv.chat_messages && Array.isArray(conv.chat_messages)) {
+                messages = conv.chat_messages;
+            } else if (conv.messages && Array.isArray(conv.messages)) {
+                messages = conv.messages;
+            } else if (conv.mapping && typeof conv.mapping === 'object') {
+                const msgMap = conv.mapping;
+                const sortedKeys = Object.keys(msgMap).sort((a, b) => {
+                    const timeA = msgMap[a]?.message?.create_time || 0;
+                    const timeB = msgMap[b]?.message?.create_time || 0;
+                    return timeA - timeB;
+                });
+                messages = sortedKeys.map(k => msgMap[k].message).filter(m => m && m.content);
+            }
+
+            const parsedMessages = messages.map(msg => {
+                let role = msg.sender || msg.role || msg.author?.role || 'unknown';
+                let content = extractTextContent(msg.text || msg.content);
+                return { role, content };
+            }).filter(m => m.content.trim() !== '');
+
+            return { title, date, messages: parsedMessages, rawDate: parseDate(date) };
+        });
+
+        filteredConversations = [...conversations];
+        modifiedConvIndices = new Set();
+        renderSidebar();
+        toolbar.style.display = 'flex';
+        tabBar.style.display = 'flex';
+        statusBar.style.display = 'flex';
+        showTab('chat');
+    }
+
+    function parseDate(dateStr) {
+        if (!dateStr || dateStr === 'UNKNOWN_DATE') return null;
+        try {
+            const isoDate = new Date(dateStr);
+            if (!isNaN(isoDate.getTime()) && isoDate.getFullYear() > 1980) return isoDate;
+            const timestamp = parseInt(dateStr);
+            if (!isNaN(timestamp) && timestamp > 946684800) return new Date(timestamp * 1000);
+            return null;
+        } catch (e) { return null; }
+    }
+
+    // ─── DATE FILTER ─────────────────────────────────────────────────────────
+    function applyDateFilter() {
+        const from = dateFromInput.value ? new Date(dateFromInput.value) : null;
+        const to = dateToInput.value ? new Date(dateToInput.value + 'T23:59:59') : null;
+        dateFilter = { from, to };
+        filteredConversations = conversations.filter(conv => {
+            if (!conv.rawDate) return true;
+            if (from && conv.rawDate < from) return false;
+            if (to && conv.rawDate > to) return false;
+            return true;
+        });
+        filterStatus.textContent = `SHOWING ${filteredConversations.length} OF ${conversations.length} CONVERSATIONS`;
+        currentConvIndex = null;
+        renderSidebar();
+        chatContainer.innerHTML = `<div class="empty-state"><p>> FILTER APPLIED</p><p style="font-size:0.8rem;">SELECT CONVERSATION</p></div>`;
+    }
+
+    function clearDateFilter() {
+        dateFromInput.value = '';
+        dateToInput.value = '';
+        dateFilter = { from: null, to: null };
+        filteredConversations = [...conversations];
+        filterStatus.textContent = '';
+        currentConvIndex = null;
+        renderSidebar();
+    }
+
+    // ─── SEARCH / REPLACE ────────────────────────────────────────────────────
+    function previewReplacements() {
+        const searchTerm = searchTermInput.value;
+        if (!searchTerm) { replaceStatus.textContent = 'ERROR: ENTER SEARCH TERM'; return; }
+
+        if (flatFileMode) {
+            const regex = new RegExp(escapeRegex(searchTerm), 'gi');
+            const matches = flatFileContent.match(regex);
+            replaceStatus.textContent = matches ? `FOUND ${matches.length} MATCH(ES)` : 'NO MATCHES';
+            replaceStatus.style.color = matches ? 'var(--accent-color)' : 'var(--warning-color)';
+            renderFlatFile(searchTerm);
+            return;
+        }
+
+        if (currentConvIndex === null) { replaceStatus.textContent = 'ERROR: NO CONVERSATION SELECTED'; return; }
+        const conv = conversations[currentConvIndex];
+        searchMatches = [];
+        conv.messages.forEach((msg, idx) => {
+            if (msg.content.toLowerCase().includes(searchTerm.toLowerCase())) searchMatches.push(idx);
+        });
+        replaceStatus.textContent = searchMatches.length > 0 ? `FOUND ${searchMatches.length} MATCH(ES)` : 'NO MATCHES FOUND';
+        replaceStatus.style.color = searchMatches.length > 0 ? 'var(--accent-color)' : 'var(--warning-color)';
+        renderConversation(currentConvIndex, searchTerm);
+    }
+
+    function showReplaceModal() {
+        const searchTerm = searchTermInput.value;
+        const replaceTerm = replaceTermInput.value;
+        if (!searchTerm) { replaceStatus.textContent = 'ERROR: ENTER SEARCH TERM'; return; }
+        if (!replaceTerm && replaceTerm !== '') { replaceStatus.textContent = 'ERROR: ENTER REPLACEMENT TEXT'; return; }
+
+        let matchCount = 0;
+        let diffHTML = '';
+
+        if (flatFileMode) {
+            const regex = new RegExp(escapeRegex(searchTerm), 'gi');
+            const matches = flatFileContent.match(regex);
+            matchCount = matches ? matches.length : 0;
+            const preview = flatFileContent.substring(0, 600);
+            const previewAfter = preview.replace(regex, replaceTerm);
+            diffHTML = buildDiffHTML(preview, previewAfter, '(first 600 chars)');
+        } else {
+            if (currentConvIndex === null) { replaceStatus.textContent = 'ERROR: NO CONVERSATION SELECTED'; return; }
+            const conv = conversations[currentConvIndex];
+            let beforeSnippet = '', afterSnippet = '';
+            conv.messages.forEach((msg, idx) => {
+                const regex = new RegExp(escapeRegex(searchTerm), 'gi');
+                const matches = msg.content.match(regex);
+                if (matches) {
+                    matchCount += matches.length;
+                    if (!beforeSnippet) {
+                        beforeSnippet = msg.content.substring(0, 400);
+                        afterSnippet = msg.content.substring(0, 400).replace(regex, replaceTerm);
+                    }
+                }
+            });
+            diffHTML = buildDiffHTML(beforeSnippet, afterSnippet, '(first matching message, first 400 chars)');
+        }
+
+        replacePreview.innerHTML = `
+            <p style="color:var(--warning-color);font-weight:bold;">⚠ WARNING: THIS ACTION MODIFIES IN-MEMORY DATA</p>
+            <p>Found <strong>${matchCount}</strong> occurrence(s) of "<strong>${escapeHtml(searchTerm)}</strong>"</p>
+            <p>Will replace with: "<strong>${escapeHtml(replaceTerm)}</strong>"</p>
+            ${diffHTML}
+            <p style="margin-top:1rem;font-size:0.78rem;color:var(--text-secondary);">
+                All replacements will be logged to the Audit Log. Export after replacement to save changes.
+            </p>
+        `;
+        replaceModal.style.display = 'block';
+    }
+
+    function buildDiffHTML(before, after, label) {
+        if (!before) return '';
+        return `
+            <div style="font-size:0.7rem;color:var(--text-secondary);margin-top:0.75rem;">${label}</div>
+            <div class="diff-grid">
+                <div class="diff-pane before">
+                    <h5>BEFORE</h5>
+                    <div>${escapeHtml(before)}</div>
+                </div>
+                <div class="diff-pane after">
+                    <h5>AFTER</h5>
+                    <div>${escapeHtml(after)}</div>
+                </div>
+            </div>
+        `;
+    }
+
+    function applyReplacements() {
+        const searchTerm = searchTermInput.value;
+        const replaceTerm = replaceTermInput.value;
+        const timestamp = new Date().toISOString();
+
+        if (flatFileMode) {
+            const regex = new RegExp(escapeRegex(searchTerm), 'gi');
+            const matches = flatFileContent.match(regex);
+            const totalReplaced = matches ? matches.length : 0;
+            if (totalReplaced > 0) {
+                // Audit log entry
+                const snippet = flatFileContent.substring(flatFileContent.toLowerCase().indexOf(searchTerm.toLowerCase()), flatFileContent.toLowerCase().indexOf(searchTerm.toLowerCase()) + 80);
+                auditLog.push({
+                    conversation_title: flatFileName,
+                    date: timestamp,
+                    message_index: 'flat',
+                    original_text_snippet: snippet,
+                    replacement_text: replaceTerm,
+                    timestamp_of_action: timestamp,
+                    occurrences_replaced: totalReplaced
+                });
+                flatFileContent = flatFileContent.replace(regex, replaceTerm);
+                conversations[0].messages[0].content = flatFileContent;
+                updateAuditCount();
+                modifiedConvIndices.add(0);
+            }
+            replaceModal.style.display = 'none';
+            replaceStatus.textContent = `REPLACED ${totalReplaced} OCCURRENCE(S)`;
+            replaceStatus.style.color = 'var(--accent-color)';
+            renderFlatFile();
+            renderSidebar();
+            return;
+        }
+
+        const conv = conversations[currentConvIndex];
+        let totalReplaced = 0;
+        conv.messages.forEach((msg, msgIdx) => {
+            const regex = new RegExp(escapeRegex(searchTerm), 'gi');
+            const matches = msg.content.match(regex);
+            if (matches) {
+                const snippet = msg.content.substring(msg.content.toLowerCase().indexOf(searchTerm.toLowerCase()), msg.content.toLowerCase().indexOf(searchTerm.toLowerCase()) + 80);
+                auditLog.push({
+                    conversation_title: conv.title,
+                    date: conv.date,
+                    message_index: msgIdx,
+                    original_text_snippet: snippet,
+                    replacement_text: replaceTerm,
+                    timestamp_of_action: timestamp,
+                    occurrences_replaced: matches.length
+                });
+                totalReplaced += matches.length;
+                msg.content = msg.content.replace(regex, replaceTerm);
+            }
+        });
+
+        modifiedConvIndices.add(currentConvIndex);
+        updateAuditCount();
+        replaceModal.style.display = 'none';
+        replaceStatus.textContent = `REPLACED ${totalReplaced} OCCURRENCE(S)`;
+        replaceStatus.style.color = 'var(--accent-color)';
+        renderConversation(currentConvIndex);
+        renderSidebar();
+    }
+
+    function updateAuditCount() {
+        auditCount.textContent = auditLog.length > 0 ? `(${auditLog.length} entries)` : '';
+    }
+
+    // ─── SCAN ALL ─────────────────────────────────────────────────────────────
+    function scanAllConversations() {
+        const searchTerm = searchTermInput.value.trim();
+        if (!searchTerm) { replaceStatus.textContent = 'ERROR: ENTER SEARCH TERM TO SCAN'; return; }
+        if (conversations.length === 0) { replaceStatus.textContent = 'ERROR: NO DATA LOADED'; return; }
+
+        const hits = [];
+        conversations.forEach((conv, convIdx) => {
+            conv.messages.forEach((msg, msgIdx) => {
+                const regex = new RegExp(escapeRegex(searchTerm), 'gi');
+                const content = msg.content;
+                if (regex.test(content)) {
+                    // Find all match positions for snippet
+                    const idx = content.toLowerCase().indexOf(searchTerm.toLowerCase());
+                    const start = Math.max(0, idx - 40);
+                    const end = Math.min(content.length, idx + searchTerm.length + 80);
+                    const snippet = content.substring(start, end);
+                    hits.push({
+                        convIdx,
+                        convTitle: conv.title,
+                        convDate: formatDate(conv.date),
+                        msgIdx,
+                        snippet,
+                        searchTerm
+                    });
+                }
+            });
+        });
+
+        renderScanResults(hits, searchTerm);
+        showTab('scan');
+        document.getElementById('tab-scan').classList.add('has-data');
+        replaceStatus.textContent = `SCAN: ${hits.length} HIT(S) ACROSS ${conversations.length} CONVOS`;
+        replaceStatus.style.color = hits.length > 0 ? 'var(--warning-color)' : 'var(--accent-color)';
+    }
+
+    function renderScanResults(hits, searchTerm) {
+        if (hits.length === 0) {
+            scanPanel.innerHTML = `<div class="empty-state"><p>> NO MATCHES FOUND</p><p style="font-size:0.8rem;">Term: "${escapeHtml(searchTerm)}"</p></div>`;
+            return;
+        }
+
+        const headerHTML = `
+            <div style="padding:0.75rem;border-bottom:1px solid var(--accent-color);background:#000;position:sticky;top:0;">
+                <span style="color:var(--accent-color);font-size:0.85rem;font-weight:bold;">
+                    SCAN RESULTS — ${hits.length} HIT(S) FOR "${escapeHtml(searchTerm)}"
+                </span>
+                <span style="color:var(--text-secondary);font-size:0.75rem;margin-left:1rem;">
+                    Click a row to jump to that conversation
+                </span>
+            </div>
+            <div class="scan-header-row">
+                <span>CONVERSATION</span>
+                <span>DATE</span>
+                <span>MSG#</span>
+            </div>
+        `;
+
+        const rowsHTML = hits.map(hit => {
+            const escapedSnippet = escapeHtml(hit.snippet);
+            const highlightedSnippet = escapedSnippet.replace(
+                new RegExp(`(${escapeRegex(escapeHtml(hit.searchTerm))})`, 'gi'),
+                '<span class="scan-hit">$1</span>'
+            );
+            return `
+                <div class="scan-result-row" onclick="jumpToScanResult(${hit.convIdx}, ${hit.msgIdx})">
+                    <span class="scan-result-title">${escapeHtml(hit.convTitle)}</span>
+                    <span style="color:var(--text-secondary);">${hit.convDate}</span>
+                    <span style="color:var(--text-secondary);">#${hit.msgIdx}</span>
+                    <div class="scan-result-snippet">...${highlightedSnippet}...</div>
+                </div>
+            `;
+        }).join('');
+
+        scanPanel.innerHTML = headerHTML + rowsHTML;
+    }
+
+    function jumpToScanResult(convIdx, msgIdx) {
+        showTab('chat');
+        selectConversation(convIdx);
+        // Scroll to target message
+        setTimeout(() => {
+            const messages = chatContainer.querySelectorAll('.message');
+            if (messages[msgIdx]) {
+                messages[msgIdx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                messages[msgIdx].style.transition = 'box-shadow 0.3s';
+                messages[msgIdx].style.boxShadow = '0 0 20px var(--info-color)';
+                setTimeout(() => { messages[msgIdx].style.boxShadow = ''; }, 2000);
+            }
+        }, 100);
+    }
+
+    // ─── AUDIT LOG ───────────────────────────────────────────────────────────
+    function showAuditModal() {
+        const modal = document.getElementById('audit-modal');
+        const body = document.getElementById('audit-modal-body');
+        if (auditLog.length === 0) {
+            body.innerHTML = '<p style="color:var(--text-secondary);">No replacements made yet in this session.</p>';
+        } else {
+            body.innerHTML = auditLog.map((entry, i) => `
+                <div class="audit-entry">
+                    <div class="audit-conv">${i + 1}. ${escapeHtml(entry.conversation_title)}</div>
+                    <div class="audit-meta">
+                        MSG #${entry.message_index} &nbsp;|&nbsp;
+                        ${entry.occurrences_replaced} replacement(s) &nbsp;|&nbsp;
+                        ${entry.timestamp_of_action}
+                    </div>
+                    <div class="audit-removed">REMOVED: ...${escapeHtml(entry.original_text_snippet)}...</div>
+                    <div class="audit-added">REPLACED WITH: ${escapeHtml(entry.replacement_text)}</div>
+                </div>
+            `).join('');
+        }
+        modal.style.display = 'block';
+    }
+
+    function exportAuditLog(format) {
+        if (auditLog.length === 0) {
+            alert('Audit log is empty. No replacements have been made.');
+            return;
+        }
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+        if (format === 'json') {
+            downloadFile(JSON.stringify(auditLog, null, 2), `audit-log_${timestamp}.json`, 'application/json');
+        } else {
+            let txt = `TRANSCRIPTIFICATOR AUDIT LOG\n`;
+            txt += `Generated: ${new Date().toISOString()}\n`;
+            txt += `Total entries: ${auditLog.length}\n`;
+            txt += '='.repeat(60) + '\n\n';
+            auditLog.forEach((entry, i) => {
+                txt += `ENTRY ${i + 1}\n`;
+                txt += `Conversation: ${entry.conversation_title}\n`;
+                txt += `Message Index: ${entry.message_index}\n`;
+                txt += `Replacements Made: ${entry.occurrences_replaced}\n`;
+                txt += `Action Timestamp: ${entry.timestamp_of_action}\n`;
+                txt += `Original Snippet: ...${entry.original_text_snippet}...\n`;
+                txt += `Replacement: ${entry.replacement_text}\n`;
+                txt += '-'.repeat(40) + '\n\n';
+            });
+            downloadFile(txt, `audit-log_${timestamp}.txt`, 'text/plain');
+        }
+    }
+
+    // ─── SIDEBAR ─────────────────────────────────────────────────────────────
+    function renderSidebar() {
+        if (filteredConversations.length === 0) {
+            convList.innerHTML = `<div style="padding:1rem;text-align:center;color:var(--text-secondary);">[ NO CONVERSATIONS MATCH FILTER ]</div>`;
+            return;
+        }
+        convList.innerHTML = '';
+        filteredConversations.forEach((conv, index) => {
+            const actualIndex = conversations.indexOf(conv);
+            const item = document.createElement('div');
+            item.className = 'conv-item';
+            if (currentConvIndex === actualIndex) item.classList.add('active');
+            if (modifiedConvIndices.has(actualIndex)) item.classList.add('modified');
+
+            const preview = conv.messages.length > 0
+                ? conv.messages[0].content.substring(0, 100).replace(/\n/g, ' ')
+                : 'No messages';
+            const modBadge = modifiedConvIndices.has(actualIndex) ? '<span class="modified-badge">MODIFIED</span>' : '';
+
+            item.innerHTML = `
+                <div class="conv-item-title">${escapeHtml(conv.title)}${modBadge}</div>
+                <div class="conv-item-date">${formatDate(conv.date)}</div>
+                <div class="conv-item-preview">${escapeHtml(preview)}</div>
+            `;
+            item.addEventListener('click', () => selectConversation(actualIndex));
+            convList.appendChild(item);
+        });
+    }
+
+    function selectConversation(index) {
+        currentConvIndex = index;
+        searchMatches = [];
+        replaceStatus.textContent = '';
+        showTab('chat');
+        renderSidebar();
+        if (conversations[index]?.isFlat) {
+            flatFileMode = true;
+            flatFileContent = conversations[index].messages[0].content;
+            renderFlatFile();
+        } else {
+            flatFileMode = false;
+            renderConversation(index);
+        }
+    }
+
+    function renderConversation(index, highlightTerm = null) {
+        const conv = conversations[index];
+        chatContainer.innerHTML = '';
+        const userLabel = userNameInput.value.trim() || 'USER';
+        const aiLabel = aiNameInput.value.trim() || 'ASSISTANT';
+
+        if (!conv.messages || conv.messages.length === 0) {
+            chatContainer.innerHTML = `
+                <div class="empty-state">
+                    <p>> NO MESSAGES FOUND IN THIS CONVERSATION</p>
+                    <p style="font-size:0.8rem;color:#ff0000;">[CHECK JSON: chat_messages ARRAY IS EMPTY]</p>
+                </div>`;
+            convInfo.textContent = `ACTIVE: ${conv.title}`;
+            msgCount.textContent = '0 MSGS';
+            return;
+        }
+
+        conv.messages.forEach((msg, idx) => {
+            if (!msg.content || msg.content.trim() === '') return;
+            const isUser = msg.role.toLowerCase().includes('user') || msg.role.toLowerCase().includes('human');
+            const roleLabel = isUser ? userLabel : aiLabel;
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${isUser ? 'user' : 'assistant'}`;
+            msgDiv.dataset.msgIndex = idx;
+
+            let content = escapeHtml(msg.content);
+            if (highlightTerm && searchMatches.includes(idx)) {
+                msgDiv.classList.add('highlight-match');
+                const regex = new RegExp(`(${escapeRegex(highlightTerm)})`, 'gi');
+                content = content.replace(regex, '<span class="search-highlight">$1</span>');
+            }
+            msgDiv.innerHTML = `
+                <div class="message-header">[${escapeHtml(roleLabel)}]</div>
+                <div class="message-content">${content}</div>
+            `;
+            chatContainer.appendChild(msgDiv);
+        });
+
+        convInfo.textContent = `ACTIVE: ${conv.title}`;
+        msgCount.textContent = `${conv.messages.length} MSGS`;
+        setTimeout(() => { chatContainer.scrollTop = chatContainer.scrollHeight; }, 50);
+    }
+
+    // ─── EXPORT ───────────────────────────────────────────────────────────────
+    function extractIStatementsFromConv(conv, aiLabel) {
+        const iStatements = [];
+        conv.messages.forEach(msg => {
+            const isAI = !msg.role.toLowerCase().includes('user') && !msg.role.toLowerCase().includes('human');
+            if (!isAI) return;
+            const sentences = msg.content.split(/[.!?]+/).map(s => s.trim()).filter(s => s);
+            sentences.forEach(sentence => {
+                if (/^I\s/i.test(sentence)) {
+                    const generic = [
+                        /^I can help/i, /^I'll/i, /^I will/i, /^I'd be happy/i,
+                        /^I understand/i, /^I see/i, /^I'm sorry/i, /^I apologize/i,
+                        /^I think you/i, /^I recommend/i, /^I suggest/i
+                    ];
+                    if (!generic.some(p => p.test(sentence)) && sentence.length > 20) {
+                        iStatements.push(sentence.trim());
+                    }
+                }
+            });
+        });
+        return iStatements;
+    }
+
+    function formatFilename(template, conv) {
+        const userLabel = userNameInput.value.trim() || 'USER';
+        const aiLabel = aiNameInput.value.trim() || 'CLAUDE';
+        let dateStr = 'unknown-date';
+        if (conv.rawDate) {
+            const y = conv.rawDate.getFullYear();
+            const m = String(conv.rawDate.getMonth() + 1).padStart(2, '0');
+            const d = String(conv.rawDate.getDate()).padStart(2, '0');
+            dateStr = `${y}-${m}-${d}`;
+        }
+        const titleStr = conv.title.toLowerCase()
+            .replace(/[^a-z0-9\s-]/g, '')
+            .replace(/\s+/g, '-')
+            .replace(/-+/g, '-')
+            .substring(0, 50);
+        return template
+            .replace(/{date}/g, dateStr)
+            .replace(/{title}/g, titleStr)
+            .replace(/{user}/g, userLabel.toLowerCase())
+            .replace(/{ai}/g, aiLabel.toLowerCase())
+            .replace(/[^a-z0-9_-]/gi, '_');
+    }
+
+    function buildConvContent(conv, format, includeIStatements) {
+        const userLabel = userNameInput.value.trim() || 'USER';
+        const aiLabel = aiNameInput.value.trim() || 'CLAUDE';
+        let content = '';
+
+        if (conv.isFlat) {
+            return { content: conv.messages[0].content, extension: '.txt', mimeType: 'text/plain' };
+        }
+
+        if (format === 'txt') {
+            content = conv.messages.map(msg => {
+                const r = msg.role.toLowerCase();
+                const role = (r.includes('user') || r.includes('human')) ? userLabel : aiLabel;
+                return `[${role}]:\n${msg.content}\n`;
+            }).join('\n---\n\n');
+            if (includeIStatements) {
+                const stmts = extractIStatementsFromConv(conv, aiLabel);
+                if (stmts.length > 0) {
+                    content += '\n\n' + '='.repeat(60) + '\n';
+                    content += `I-STATEMENTS EXTRACTED (${stmts.length} total)\n`;
+                    content += '='.repeat(60) + '\n\n';
+                    content += stmts.map((s, i) => `${i + 1}. ${s}`).join('\n\n');
+                }
+            }
+            return { content, extension: '.txt', mimeType: 'text/plain' };
+        }
+
+        if (format === 'md') {
+            content = `# ${conv.title}\n\n*DATE: ${formatDate(conv.date)}*\n\n`;
+            content += conv.messages.map(msg => {
+                const r = msg.role.toLowerCase();
+                const role = (r.includes('user') || r.includes('human')) ? userLabel : aiLabel;
+                return `**${role}:**\n\n${msg.content}\n\n`;
+            }).join('---\n\n');
+            if (includeIStatements) {
+                const stmts = extractIStatementsFromConv(conv, aiLabel);
+                if (stmts.length > 0) {
+                    content += '\n---\n\n## I-Statements Extracted\n\n';
+                    content += stmts.map((s, i) => `${i + 1}. ${s}`).join('\n\n');
+                }
+            }
+            return { content, extension: '.md', mimeType: 'text/markdown' };
+        }
+
+        if (format === 'json') {
+            const exportObj = {
+                title: conv.title,
+                date: conv.date,
+                participants: { user: userLabel, assistant: aiLabel },
+                messages: conv.messages.map(msg => ({
+                    role: msg.role,
+                    custom_role: (msg.role.toLowerCase().includes('user') || msg.role.toLowerCase().includes('human')) ? userLabel : aiLabel,
+                    content: msg.content
+                }))
+            };
+            if (includeIStatements) {
+                const stmts = extractIStatementsFromConv(conv, aiLabel);
+                if (stmts.length > 0) exportObj.i_statements = stmts;
+            }
+            return { content: JSON.stringify(exportObj, null, 2), extension: '.json', mimeType: 'application/json' };
+        }
+
+        return { content: '', extension: '.txt', mimeType: 'text/plain' };
+    }
+
+    function exportConversation() {
+        if (currentConvIndex === null) return;
+        const conv = conversations[currentConvIndex];
+        const format = exportFormatSelect.value;
+        const template = filenameTemplate.value.trim() || '{date}_{title}';
+        const includeIStatements = extractIStatements.checked;
+        const { content, extension, mimeType } = buildConvContent(conv, format, includeIStatements);
+        const filename = formatFilename(template, conv) + extension;
+        downloadFile(content, filename, mimeType);
+    }
+
+    function batchExport(modifiedOnly) {
+        const format = exportFormatSelect.value;
+        const template = filenameTemplate.value.trim() || '{date}_{title}';
+        const includeIStatements = extractIStatements.checked;
+        const toExport = modifiedOnly
+            ? conversations.filter((_, i) => modifiedConvIndices.has(i))
+            : conversations;
+
+        if (toExport.length === 0) {
+            alert(modifiedOnly ? 'No modified conversations to export.' : 'No conversations loaded.');
+            return;
+        }
+
+        toExport.forEach(conv => {
+            const { content, extension, mimeType } = buildConvContent(conv, format, includeIStatements);
+            const filename = formatFilename(template, conv) + extension;
+            downloadFile(content, filename, mimeType);
+        });
+
+        replaceStatus.textContent = `EXPORTED ${toExport.length} FILE(S)`;
+        replaceStatus.style.color = 'var(--accent-color)';
+    }
+
+    // ─── SESSION SAVE / RESTORE ──────────────────────────────────────────────
+    function saveSession() {
+        if (conversations.length === 0 && auditLog.length === 0) {
+            alert('Nothing to save.');
+            return;
+        }
+        const sessionData = {
+            version: '7.0',
+            savedAt: new Date().toISOString(),
+            conversations,
+            auditLog,
+            modifiedConvIndices: Array.from(modifiedConvIndices),
+            userLabel: userNameInput.value,
+            aiLabel: aiNameInput.value,
+            exportFormat: exportFormatSelect.value,
+            filenameTemplate: filenameTemplate.value
+        };
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+        downloadFile(JSON.stringify(sessionData, null, 2), `transcriptificator-session_${timestamp}.json`, 'application/json');
+    }
+
+    function restoreSession(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const data = JSON.parse(e.target.result);
+                if (!data.version || !data.conversations) throw new Error('Invalid session file');
+                conversations = data.conversations;
+                conversations.forEach(conv => {
+                    if (conv.rawDate) conv.rawDate = new Date(conv.rawDate);
+                });
+                auditLog = data.auditLog || [];
+                modifiedConvIndices = new Set(data.modifiedConvIndices || []);
+                userNameInput.value = data.userLabel || 'USER';
+                aiNameInput.value = data.aiLabel || 'CLAUDE';
+                exportFormatSelect.value = data.exportFormat || 'txt';
+                filenameTemplate.value = data.filenameTemplate || '{date}_{title}';
+                filteredConversations = [...conversations];
+                currentConvIndex = null;
+                updateAuditCount();
+                renderSidebar();
+                toolbar.style.display = 'flex';
+                tabBar.style.display = 'flex';
+                statusBar.style.display = 'flex';
+                fileStatus.textContent = `SESSION RESTORED: ${file.name} (${conversations.length} convos, ${auditLog.length} audit entries)`;
+                chatContainer.innerHTML = `<div class="empty-state"><p>> SESSION RESTORED</p><p style="font-size:0.8rem;">SELECT A CONVERSATION</p></div>`;
+            } catch (err) {
+                alert('ERROR: Invalid session file. ' + err.message);
+            }
+        };
+        reader.readAsText(file);
+    }
+
+    // ─── UTILITIES ───────────────────────────────────────────────────────────
+    async function downloadFile(content, filename, mimeType) {
+        if (window.Neutralino) {
+            try {
+                const targetPath = await Neutralino.os.getPath('cwd') + '/corpus/' + filename;
+                await Neutralino.filesystem.writeFile(targetPath, content);
+                fileStatus.textContent = `SAVED TO CORPUS: ${filename}`;
+            } catch (err) {
+                console.error(err);
+                alert('Neutralino save failed: ' + err.message);
+            }
+        } else {
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    }
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+        return text.replace(/[&<>"']/g, m => map[m]);
+    }
+
+    function escapeRegex(text) {
+        return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    function formatDate(dateStr) {
+        if (!dateStr || dateStr === 'UNKNOWN_DATE') return 'UNKNOWN_DATE';
+        try {
+            const isoDate = new Date(dateStr);
+            if (!isNaN(isoDate.getTime()) && isoDate.getFullYear() > 1980) {
+                return isoDate.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+            }
+            const timestamp = parseInt(dateStr);
+            if (!isNaN(timestamp) && timestamp > 946684800) {
+                return new Date(timestamp * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+            }
+            return dateStr;
+        } catch (e) { return dateStr; }
+    }
+</script>
+</body>
+</html>

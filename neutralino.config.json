@@ -1,0 +1,55 @@
+{
+  "applicationId": "org.consciousnode.brymar",
+  "version": "3.3.4",
+  "defaultWindowWidth": 900,
+  "defaultWindowHeight": 640,
+  "minWindowWidth": 720,
+  "minWindowHeight": 520,
+  "enableServer": true,
+  "enableNativeAPI": true,
+  "enableExtensions": true,
+  "nativeAllowList": [
+    "app.*",
+    "os.*",
+    "filesystem.*",
+    "window.*",
+    "events.*",
+    "extension.*"
+  ],
+  "tokenSecurity": "one-time",
+  "logging": {
+    "enabled": true,
+    "writeToLogFile": true
+  },
+  "modes": {
+    "window": {
+      "title": "Brymar College",
+      "url": "/gui/index.html",
+      "icon": "/gui/assets/icon.png",
+      "fullScreen": false,
+      "alwaysOnTop": false,
+      "enableInspector": false,
+      "borderless": false,
+      "maximize": false,
+      "hidden": false,
+      "resizable": true,
+      "exitProcessOnClose": true,
+      "processArgs": ""
+    }
+  },
+  "cli": {
+    "binaryName": "brymar",
+    "resourcesPath": "/gui/",
+    "extensionsPath": "/extensions/",
+    "defaultExtensionsPath": "extensions",
+    "clientLibrary": "/gui/neutralino.js",
+    "binaryVersion": "6.7.0",
+    "clientVersion": "6.7.0"
+  },
+  "extensions": [
+    {
+      "id": "org.consciousnode.brymar.trainer",
+      "command": "node extensions/trainer/main.js --nl-port=${NL_PORT} --nl-token=${NL_TOKEN} --nl-extension-id=${NL_EXTID}"
+    }
+  ]
+}

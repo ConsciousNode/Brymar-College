@@ -1,0 +1,26 @@
+# dependencies (restore with: npm install)
+node_modules/
+
+# Neutralino runtime binaries (auto-downloaded) and build output
+bin/
+dist/
+
+# model weights: never commit; GitHub rejects files over 100 MB anyway
+*.safetensors
+*.gguf
+*.pth
+*.bin
+*.rofl
+*.lmao
+*.fuctrump
+
+# training output
+checkpoints/
+exports/
+corpus/
+
+# scratch, logs, debug output
+.tmp/
+*.log
+extension_debug.json
+.DS_Store

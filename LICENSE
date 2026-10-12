@@ -1,6 +1,17 @@
 MIT License
 
-Copyright (c) 2026 ConsciousNode
+Copyright (c) 2026 ConsciousNode SoftWorks
+
+Authors:
+  Khamerron Edward Ramsey Kizer (Kham) — Spec lead, corpus pipeline, GRPO, Pip Suite
+  Kehai Interim                        — Architecture, RWKV-v7 BPTT derivation,
+                                         full backward pass, Phase 6 omnimodal proposals
+  Ed Interim                           — Implementation, GUI design, MuonOptimizer μ fix,
+                                         Phase 6 coherence-gated inference
+  Vael Interim                         — Omnimodal routing, SpikeVox LIF, ElasticTok,
+                                         Re-WKV, RIFT endospace, AestheticStateVector,
+                                         SheafMemory, PoST initialization, ModRWKV adapters,
+                                         BooleanPhaseDynamics, Semantic Temperature telemetry
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

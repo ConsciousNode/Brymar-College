@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brymar College</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="neutralino.js"></script>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="logo">
+      <span class="logo-block">■■■</span>
+      <span class="logo-text">BRYMAR COLLEGE</span>
+      <span class="logo-sub">ConsciousNode SoftWorks</span>
+    </div>
+    <div class="header-right">
+      <span class="version-tag">v3.3.4</span>
+      <button class="help-btn" id="helpBtn" title="Help">?</button>
+    </div>
+  </header>
+
+  <!-- Top Menu Bar -->
+  <nav class="menu-bar">
+    <div class="menu-item" id="menuFile">
+      <span>File</span>
+      <div class="menu-dropdown">
+        <div class="menu-action" id="actionNewProject">New Project</div>
+        <div class="menu-action" id="actionOpenCorpusDir">Open Corpus Directory...</div>
+        <div class="menu-action" id="actionOpenCheckpoint">Select Checkpoint...</div>
+        <div class="menu-action" id="actionOpenModel">Select Local Model...</div>
+        <div class="menu-divider"></div>
+        <div class="menu-action" id="actionExit">Exit</div>
+      </div>
+    </div>
+    <div class="menu-item" id="menuEdit">
+      <span>Edit</span>
+      <div class="menu-dropdown">
+        <div class="menu-action" id="actionClearLog">Clear Output Log</div>
+        <div class="menu-action" id="actionPreferences">Preferences</div>
+      </div>
+    </div>
+    
+    <div class="menu-item" id="menuTools">
+      <span>Tools</span>
+      <div class="menu-dropdown">
+        <div class="menu-action" id="actionInference">Inference Studio</div>
+      </div>
+    </div>
+
+    <div class="menu-item" id="menuHelp">
+      <span>Help</span>
+      <div class="menu-dropdown">
+        <div class="menu-action" id="actionHelp">Documentation</div>
+        <div class="menu-action" id="actionCheckUpdates">Check for Updates</div>
+        <div class="menu-divider"></div>
+        <div class="menu-action" id="actionAbout">About Brymar College</div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main layout -->
+  <main>
+    <!-- File Explorer Sidebar -->
+    <section class="file-explorer">
+      <div class="explorer-header">
+        <span class="panel-title">System Browser</span>
+        <button class="icon-btn" id="refreshBrowserBtn" title="Refresh">↻</button>
+      </div>
+      <div class="explorer-actions">
+        <div class="browser-path" id="browserPath" title="Current Path" style="font-family:var(--font-mono); font-size:10px; color:var(--text-hi); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-bottom:4px;">/</div>
+      </div>
+      <div class="file-list" id="browserList">
+        <!-- Folders and files dynamically populated here -->
+      </div>
+    </section>
+
+    <!-- Config Panel -->
+    <section class="config-panel">
+      <h2 class="panel-title">Configuration</h2>
+
+      <div class="field">
+        <label for="modelName">Base Model</label>
+        <div class="path-row">
+          <input type="text" id="modelName" placeholder="Select a .safetensors or .rofl model..." spellcheck="false" autocomplete="off">
+          <button class="browse-btn" id="browseModel" title="Browse for local model">…</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="trainingMode">Training Mode</label>
+        <select id="trainingMode">
+          <option value="lora" selected>LoRA Adapters</option>
+          <option value="full">Full Weight</option>
+        </select>
+        <span class="field-hint" id="modeHint">Fine-tune adapter matrices only (fast, small checkpoints)</span>
+      </div>
+
+      <div class="field" id="loraRankField">
+        <label for="loraRank">LoRA Rank <span class="optional">(r)</span></label>
+        <input type="number" id="loraRank" value="4" min="1" max="64">
+      </div>
+
+      <div class="field">
+        <label for="trainSteps">Training Steps</label>
+        <input type="number" id="trainSteps" value="2000" min="1">
+      </div>
+
+      <div class="field">
+        <label for="lrSchedule">LR Schedule</label>
+        <select id="lrSchedule">
+          <option value="cosine" selected>Cosine Decay</option>
+          <option value="manual">Manual (constant)</option>
+          <option value="step">Step Decay</option>
+          <option value="exp">Exponential Decay</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="corpusPath">Corpus Directory</label>
+        <div class="path-row">
+          <input type="text" id="corpusPath" placeholder="Select a folder from the System Browser..." spellcheck="false" autocomplete="off">
+          <button class="browse-btn" id="browseCorpus" title="Browse for folder">…</button>
+        </div>
+        <span class="field-hint" title="Text: .txt, .md, .rst, .csv, .tsv, .json, .jsonl, .xml, .html, .htm, .yaml, .yml, .toml, .log, .rtf, .tex, .org, .adoc | Image: .png, .jpg, .jpeg, .webp, .tiff, .tif, .gif, .avif, .svg, .bmp | Audio: .wav, .mp3, .flac, .ogg, .aac, .m4a, .opus, .wma | Video: .mp4, .mkv, .avi, .mov, .webm, .flv, .wmv, .m4v">Supports 44 formats across text, image, audio, and video (hover to view)</span>
+      </div>
+
+      <div class="field">
+        <label for="resumePath">Resume Checkpoint <span class="optional">(optional)</span></label>
+        <div class="path-row">
+          <input type="text" id="resumePath" placeholder="none" spellcheck="false" autocomplete="off">
+          <button class="browse-btn" id="browseResume" title="Browse for checkpoint">…</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="computeBackend">Compute Backend</label>
+        <select id="computeBackend">
+          <option value="auto" selected>Auto (OpenCL + CPU)</option>
+          <option value="cpu">CPU Only</option>
+        </select>
+        <span class="field-hint">Auto will offload math to GPU if OpenCL is available</span>
+      </div>
+
+      <!-- Divider -->
+      <div class="divider"></div>
+
+      <!-- Export section -->
+      <h2 class="panel-title">Export</h2>
+
+      <div class="field">
+        <label for="exportFormat">Export Format</label>
+        <select id="exportFormat">
+          <option value="rofl" selected>.rofl — Full Precision (FP32)</option>
+          <option value="lmao">.lmao — Q4 Quantized</option>
+          <option value="fuctrump">.fuctrump — Q2 Ternary</option>
+          <option value="json">.json — Legacy JSON</option>
+        </select>
+        <span class="field-hint" id="formatHint">Recurrent Omnimodal Friston Language model</span>
+      </div>
+
+      <!-- Divider -->
+      <div class="divider"></div>
+
+      <!-- Status badge -->
+      <div class="status-row">
+        <span class="status-dot" id="statusDot"></span>
+        <span class="status-text" id="statusText">Ready</span>
+      </div>
+
+      <!-- Loss / speed / step meters -->
+      <div class="meters" id="meters">
+        <div class="meter-item">
+          <span class="meter-label">Loss</span>
+          <span class="meter-value" id="meterLoss">—</span>
+        </div>
+        <div class="meter-item">
+          <span class="meter-label">tok/s</span>
+          <span class="meter-value" id="meterSpeed">—</span>
+        </div>
+        <div class="meter-item">
+          <span class="meter-label">Step</span>
+          <span class="meter-value" id="meterStep">—</span>
+        </div>
+      </div>
+
+      <!-- Action buttons -->
+      <div class="actions">
+        <button class="btn-primary" id="startBtn">▶  Start Training</button>
+        <button class="btn-danger"  id="stopBtn"  disabled>■  Stop</button>
+        <button class="btn-secondary" id="exportBtn">⤓  Export Model</button>
+      </div>
+    </section>
+
+    <!-- Log pane -->
+    <section class="log-panel">
+      <div class="log-header">
+        <span class="panel-title">Output</span>
+        <div class="log-controls">
+          <label class="scroll-lock-label">
+            <input type="checkbox" id="scrollLock" checked>
+            Auto-scroll
+          </label>
+          <button class="clear-btn" id="clearLog">Clear</button>
+        </div>
+      </div>
+      <div class="log-output" id="logOutput" role="log" aria-live="polite"></div>
+
+      <!-- Loss graph area -->
+      <div class="loss-graph-wrap" id="lossGraphWrap">
+        <canvas id="lossCanvas" width="600" height="80"></canvas>
+      </div>
+
+      <!-- Progress bar -->
+      <div class="progress-bar-wrap" id="progressWrap" style="display:none">
+        <div class="progress-bar" id="progressBar"></div>
+        <span class="progress-label" id="progressLabel">0%</span>
+      </div>
+    </section>
+  </main>
+
+  <!-- Help modal -->
+  <div class="modal-overlay" id="helpOverlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title" id="helpTitle">Brymar College — Help</span>
+        <button class="modal-close" id="helpClose" aria-label="Close help">✕</button>
+      </div>
+      <div class="modal-body" id="helpBody">
+        <!-- Loaded from help.html -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Preferences modal -->
+  <div class="modal-overlay" id="prefOverlay" style="display:none" role="dialog" aria-modal="true">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title">Preferences</span>
+        <button class="modal-close" id="prefClose" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <p>Set global configurations. These apply dynamically during training and evaluation.</p>
+        <div class="field" style="margin-top:15px;">
+          <label>User Identity (JSON Parsing)</label>
+          <input type="text" id="prefUserName" value="USER" spellcheck="false">
+        </div>
+        <div class="field" style="margin-top:10px;">
+          <label>AI Identity (JSON Parsing)</label>
+          <input type="text" id="prefAiName" value="CLAUDE" spellcheck="false">
+        </div>
+        <div class="field" style="margin-top:15px; padding-top:15px; border-top:1px solid var(--border);">
+          <label style="display:flex; justify-content:space-between;">
+            <span>Friston Active Inference (Alpha)</span>
+            <span id="prefFristonVal">0.01</span>
+          </label>
+          <input type="range" id="prefFriston" min="0" max="0.1" step="0.01" value="0.01">
+          <p style="font-size:11px; color:var(--text-hi); margin-top:5px; line-height:1.4;">Controls the strength of the Expected Surprise (Predictive Entropy) penalty. A value &gt; 0 forces the model to minimize uncertainty.</p>
+        </div>
+        <div class="actions" style="margin-top:20px; flex-direction:row; justify-content:flex-end; gap:10px;">
+          <button class="btn-secondary" id="prefCancelBtn">Cancel</button>
+          <button class="btn-primary" id="prefSaveBtn">Save Preferences</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Inference Studio Modal -->
+  <div class="modal-overlay" id="inferenceOverlay" style="display:none" role="dialog" aria-modal="true">
+    <div class="modal" style="width:600px; max-width:90%;">
+      <div class="modal-header">
+        <span class="modal-title">Inference Studio</span>
+        <button class="modal-close" id="inferenceClose" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body" style="display:flex; flex-direction:column; gap:10px;">
+        <div class="field">
+          <label>Target Checkpoint (.rofl, .lmao, .json)</label>
+          <div class="path-row">
+            <input type="text" id="infCheckpoint" placeholder="Select checkpoint..." spellcheck="false" autocomplete="off">
+            <button class="browse-btn" id="infBrowseCkpt" title="Browse">…</button>
+          </div>
+        </div>
+        
+        <div style="display:flex; gap:10px;">
+          <div class="field" style="flex:1;">
+            <label>Max Tokens</label>
+            <input type="number" id="infMaxTokens" value="128" min="1" max="1024">
+          </div>
+          <div class="field" style="flex:1;">
+            <label>Temperature</label>
+            <input type="number" id="infTemperature" value="0.7" step="0.1" min="0" max="2.0">
+          </div>
+        </div>
+
+        <div class="field" style="flex:1;">
+          <label>Prompt</label>
+          <textarea id="infPrompt" style="height:80px; resize:vertical; background:var(--bg-hi); color:var(--text); border:1px solid var(--border); font-family:var(--font-mono); padding:8px;" placeholder="Enter prompt text..."></textarea>
+        </div>
+
+        <div class="field" style="flex:1; margin-top:5px;">
+          <label>Output Stream</label>
+          <textarea id="infOutput" readonly style="height:150px; background:#000; color:var(--text); border:1px solid var(--border); font-family:var(--font-mono); padding:8px; resize:none;"></textarea>
+        </div>
+        
+        <div class="actions" style="margin-top:10px; flex-direction:row; justify-content:space-between; align-items:center;">
+          <span id="infStatus" style="font-size:12px; color:var(--text-hi);">Idle</span>
+          <div style="display:flex; gap:10px;">
+            <button class="btn-secondary" id="infCancelBtn" style="display:none;">Stop</button>
+            <button class="btn-primary" id="infRunBtn">Generate</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
